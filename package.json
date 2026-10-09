@@ -5,7 +5,7 @@
   "main": "dist/overlay/main.js",
   "scripts": {
     "start:daemon": "ts-node src/daemon/index.ts",
-    "start:overlay": "electron .",
+    "start:overlay": "npm run build && electron .",
     "simulate": "ts-node scripts/simulate.ts",
     "build": "tsc && node scripts/copy-assets.js",
     "test": "ts-node test/engine.test.ts"
