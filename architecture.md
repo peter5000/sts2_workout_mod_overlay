@@ -1,5 +1,5 @@
 ```markdown
-# Slay the Spire 2: Workout Mode Helper (v1.1.0 Specification)
+# Slay the Spire 2: Workout Mode Overlay (v1.1.0 Specification)
 ## Architecture, Data Flow, and Overlay Specification
 
 ## 1. System & Game Lifecycle Overview

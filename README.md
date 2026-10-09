@@ -1,4 +1,4 @@
-# 🏋️ Slay the Spire 2: Workout Mode Helper (v1.1.0)
+# 🏋️ Slay the Spire 2: Workout Mode Overlay (v1.1.0)
 
 > An out-of-process, zero-mod workout debt tracker and transparent HUD overlay for **Slay the Spire 2**.
 
@@ -75,8 +75,8 @@ $$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups 
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/sts2_workout_mod.git
-   cd sts2_workout_mod
+   git clone https://github.com/your-username/sts2_workout_mod_overlay.git
+   cd sts2_workout_mod_overlay
    ```
 
 2. **Install dependencies:**
