@@ -19,7 +19,9 @@ function createWindows() {
   // Window A: Panel A (Remainder Resolver & Workout Reps)
   windowA = new BrowserWindow({
     width: 380,
-    height: 340,
+    height: 320,
+    minWidth: 220,
+    minHeight: 140,
     x: 50,
     y: 50,
     frame: false,
@@ -34,9 +36,11 @@ function createWindows() {
   // Window B: Panel B (Aggregate Ledger & Squat Ratio)
   windowB = new BrowserWindow({
     width: 380,
-    height: 240,
+    height: 220,
+    minWidth: 220,
+    minHeight: 120,
     x: 50,
-    y: 410,
+    y: 390,
     frame: false,
     transparent: true,
     alwaysOnTop: process.env.ELECTRON_ALWAYS_ON_TOP !== 'false',

@@ -11,14 +11,14 @@ const WS_URL = 'ws://127.0.0.1:8765';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<ActiveSessionStore | null>(null);
-  const selectedPlayerIdx = 0; // Show strictly local player stats
+  const selectedPlayerIdx = 0; // Strictly local player stats
   const [repsInput, setRepsInput] = useState<string>('10');
   const [clickThrough, setClickThrough] = useState<boolean>(false);
   const [showStartModal, setShowStartModal] = useState<boolean>(false);
   const [startRatio, setStartRatio] = useState<number>(2);
   const [countdownText, setCountdownText] = useState<string>('24:00:00');
 
-  // Detect which panel this window instance represents ('a', 'b', or 'all')
+  // Detect which panel window this instance represents ('a', 'b', or 'all')
   const urlParams = new URLSearchParams(window.location.search);
   const targetPanel = urlParams.get('panel') || 'all';
 
@@ -156,9 +156,9 @@ const App: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* Window Drag & Control Header */}
+      {/* Header Bar */}
       <div style={styles.header}>
-        <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#edf2f7' }}>
+        <div style={styles.headerTitle}>
           {targetPanel === 'a' && '🏋️ Panel A: Debt Resolver'}
           {targetPanel === 'b' && '📊 Panel B: Run Ledger'}
           {targetPanel === 'all' && '🏋️ StS2 Workout HUD'}
@@ -178,13 +178,13 @@ const App: React.FC = () => {
       {showPanelA && (
         <div style={styles.panel}>
           <div style={styles.counterBox}>
-            <div style={{ fontSize: '11px', color: '#a0aec0', fontWeight: 'bold' }}>UNRESOLVED DEBT (YOURS)</div>
-            <div style={{ fontSize: '32px', fontWeight: 'bold', color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
-              {activeDebt} <span style={{ fontSize: '16px' }}>wc</span>
+            <div style={styles.counterLabel}>UNRESOLVED DEBT (YOURS)</div>
+            <div style={{ ...styles.counterValue, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
+              {activeDebt} <span style={styles.unitText}>wc</span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+          <div style={styles.actionRow}>
             <input
               type="number"
               min="1"
@@ -201,7 +201,7 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={styles.actionRow}>
             <button onClick={() => handleResolveReps('ALL_PUSHUPS')} style={styles.btnClear}>
               All Push-ups ({activeDebt})
             </button>
@@ -233,28 +233,28 @@ const App: React.FC = () => {
           <div style={styles.ratioRow}>
             <span>Squat Ratio: </span>
             <button onClick={() => handleUpdateRatio(ratio - 1)} style={styles.stepperBtn}>-</button>
-            <span style={{ fontWeight: 'bold', padding: '0 8px' }}>R = {ratio}</span>
+            <span style={{ fontWeight: 'bold', padding: '0 6px' }}>R = {ratio}</span>
             <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
           </div>
         </div>
       )}
 
-      {/* MODAL 1: Run Start Prompt (Rendered on Panel A or All) */}
+      {/* MODAL 1: Run Start Prompt */}
       {showStartModal && showPanelA && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
-            <h3 style={{ color: '#63b3ed' }}>🚀 RUN START INITIALIZED</h3>
-            <p style={{ margin: '12px 0', fontSize: '13px', color: '#cbd5e0' }}>
+            <h3 style={{ color: '#63b3ed', fontSize: 'clamp(14px, 3vh, 18px)' }}>🚀 RUN START INITIALIZED</h3>
+            <p style={{ margin: '8px 0', fontSize: 'clamp(11px, 2vh, 13px)', color: '#cbd5e0' }}>
               Enable Workout Mode for this session?
             </p>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '13px', marginRight: '8px' }}>Starting Squat Ratio (R):</label>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: 'clamp(11px, 2vh, 13px)', marginRight: '6px' }}>Starting Squat Ratio (R):</label>
               <input
                 type="number"
                 min="1"
                 value={startRatio}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartRatio(parseInt(e.target.value, 10) || 1)}
-                style={{ ...styles.input, width: '60px' }}
+                style={{ ...styles.input, width: '50px' }}
               />
             </div>
             <button onClick={handleConfirmStart} style={styles.btnSuccess}>
@@ -270,20 +270,20 @@ const App: React.FC = () => {
           <div style={styles.modalCard}>
             {session?.run_status === 'VICTORY' ? (
               <>
-                <h2 style={{ color: '#68d391' }}>🏆 VICTORY ACHIEVED!</h2>
-                <p style={{ margin: '8px 0', fontSize: '13px', color: '#cbd5e0' }}>
+                <h2 style={{ color: '#68d391', fontSize: 'clamp(16px, 3.5vh, 22px)' }}>🏆 VICTORY ACHIEVED!</h2>
+                <p style={{ margin: '6px 0', fontSize: 'clamp(10px, 2vh, 12px)', color: '#cbd5e0' }}>
                   All floors cleared! Final party workout summary:
                 </p>
               </>
             ) : (
               <>
-                <h2 style={{ color: '#fc8181' }}>💀 RUN DEFEATED</h2>
-                <p style={{ color: '#feb2b2', fontWeight: 'bold', margin: '6px 0', fontSize: '13px' }}>
+                <h2 style={{ color: '#fc8181', fontSize: 'clamp(16px, 3.5vh, 22px)' }}>💀 RUN DEFEATED</h2>
+                <p style={{ color: '#feb2b2', fontWeight: 'bold', margin: '4px 0', fontSize: 'clamp(11px, 2vh, 13px)' }}>
                   Mandatory 30-Minute Jog Penalty Triggered!
                 </p>
                 <div style={styles.timerBox}>
-                  <div style={{ fontSize: '11px', color: '#cbd5e0' }}>TIME REMAINING TO COMPLETE JOG</div>
-                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f6ad55' }}>
+                  <div style={{ fontSize: 'clamp(9px, 1.8vh, 11px)', color: '#cbd5e0' }}>TIME REMAINING TO COMPLETE JOG</div>
+                  <div style={{ fontSize: 'clamp(20px, 5vh, 32px)', fontWeight: 'bold', color: '#f6ad55' }}>
                     {countdownText}
                   </div>
                 </div>
@@ -291,8 +291,8 @@ const App: React.FC = () => {
             )}
 
             {/* PARTY SUMMARY TABLE FOR ALL PLAYERS */}
-            <div style={{ margin: '14px 0', textAlign: 'left' }}>
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#a0aec0', marginBottom: '6px' }}>
+            <div style={{ margin: '10px 0', textAlign: 'left', overflowX: 'auto' }}>
+              <div style={{ fontSize: 'clamp(10px, 2vh, 12px)', fontWeight: 'bold', color: '#a0aec0', marginBottom: '4px' }}>
                 PARTY SUMMARY (ALL PLAYERS)
               </div>
               <table style={styles.summaryTable}>
@@ -340,123 +340,182 @@ const App: React.FC = () => {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: '8px',
-    height: '100%',
+    padding: 'clamp(4px, 1.5vh, 10px)',
+    height: '100vh',
+    width: '100vw',
+    boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px'
+    gap: 'clamp(4px, 1vh, 8px)',
+    overflow: 'hidden'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: '4px',
+    paddingBottom: 'clamp(2px, 0.8vh, 6px)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
-    WebkitAppRegion: 'drag'
+    WebkitAppRegion: 'drag',
+    flexShrink: 0
   } as React.CSSProperties,
+  headerTitle: {
+    fontWeight: 'bold',
+    fontSize: 'clamp(10px, 2.2vh, 13px)',
+    color: '#edf2f7',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
   badge: {
-    padding: '3px 6px',
+    padding: 'clamp(2px, 0.5vh, 4px) clamp(4px, 1vw, 8px)',
     borderRadius: '4px',
     color: '#fff',
-    fontSize: '9px',
+    fontSize: 'clamp(8px, 1.6vh, 10px)',
     fontWeight: 'bold',
     border: 'none',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     WebkitAppRegion: 'no-drag'
   } as React.CSSProperties,
   panel: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
     background: 'rgba(15, 22, 34, 0.45)',
     backdropFilter: 'blur(8px)',
-    padding: '10px',
+    padding: 'clamp(6px, 1.5vh, 12px)',
     borderRadius: '8px',
-    border: '1px solid rgba(255, 255, 255, 0.12)'
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    overflow: 'hidden'
   },
   counterBox: {
-    textAlign: 'center',
-    padding: '8px',
+    flex: 2,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
     background: 'rgba(0, 0, 0, 0.25)',
     borderRadius: '6px',
-    marginBottom: '8px'
+    marginBottom: 'clamp(4px, 1vh, 8px)',
+    padding: 'clamp(4px, 1vh, 8px)'
+  },
+  counterLabel: {
+    fontSize: 'clamp(9px, 1.8vh, 11px)',
+    color: '#a0aec0',
+    fontWeight: 'bold'
+  },
+  counterValue: {
+    fontSize: 'clamp(20px, 7vh, 42px)',
+    fontWeight: 'bold',
+    lineHeight: 1.1
+  },
+  unitText: {
+    fontSize: 'clamp(12px, 3vh, 18px)'
+  },
+  actionRow: {
+    flex: 1,
+    display: 'flex',
+    gap: 'clamp(4px, 1vw, 8px)',
+    marginBottom: 'clamp(2px, 0.5vh, 6px)',
+    minHeight: '26px'
   },
   input: {
-    width: '65px',
-    padding: '5px 8px',
+    width: 'clamp(50px, 18%, 80px)',
+    padding: 'clamp(2px, 0.8vh, 6px)',
     borderRadius: '4px',
     border: '1px solid rgba(255, 255, 255, 0.2)',
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#fff',
-    fontSize: '12px'
+    fontSize: 'clamp(10px, 2.2vh, 13px)'
   },
   btnPrimary: {
     flex: 1,
-    padding: '6px 8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'clamp(4px, 1vh, 8px)',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(49, 130, 206, 0.85)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
-    fontSize: '11px'
+    fontSize: 'clamp(9px, 2.2vh, 12px)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
   btnClear: {
     flex: 1,
-    padding: '6px 8px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'clamp(4px, 1vh, 8px)',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(128, 90, 213, 0.85)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
-    fontSize: '11px'
+    fontSize: 'clamp(9px, 2.2vh, 12px)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
   btnSuccess: {
     width: '100%',
-    padding: '8px',
+    padding: 'clamp(6px, 1.5vh, 10px)',
     borderRadius: '6px',
     border: 'none',
     background: 'rgba(56, 161, 105, 0.9)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
-    fontSize: '12px'
+    fontSize: 'clamp(11px, 2.2vh, 14px)'
   },
   statGrid: {
+    flex: 2,
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '6px',
-    marginBottom: '6px'
+    gap: 'clamp(4px, 1vw, 8px)',
+    marginBottom: 'clamp(4px, 1vh, 8px)'
   },
   statCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
     background: 'rgba(0, 0, 0, 0.25)',
-    padding: '6px',
-    borderRadius: '4px',
-    textAlign: 'center'
+    padding: 'clamp(4px, 1vh, 8px)',
+    borderRadius: '4px'
   },
   statLabel: {
-    fontSize: '9px',
+    fontSize: 'clamp(8px, 1.8vh, 11px)',
     color: '#a0aec0'
   },
   statVal: {
-    fontSize: '14px',
+    fontSize: 'clamp(12px, 3.2vh, 20px)',
     fontWeight: 'bold',
     color: '#edf2f7'
   },
   ratioRow: {
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '12px',
-    marginTop: '4px'
+    fontSize: 'clamp(10px, 2.2vh, 14px)'
   },
   stepperBtn: {
-    width: '20px',
-    height: '20px',
+    width: 'clamp(18px, 4vh, 24px)',
+    height: 'clamp(18px, 4vh, 24px)',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(255, 255, 255, 0.15)',
     color: '#fff',
     fontWeight: 'bold',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontSize: 'clamp(10px, 2vh, 14px)'
   },
   modalOverlay: {
     position: 'absolute',
@@ -469,39 +528,41 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '12px',
+    padding: 'clamp(8px, 2vh, 16px)',
     borderRadius: '12px'
   },
   modalCard: {
     background: 'rgba(26, 32, 44, 0.95)',
-    padding: '14px',
+    padding: 'clamp(10px, 2vh, 16px)',
     borderRadius: '8px',
     border: '1px solid rgba(255, 255, 255, 0.15)',
     textAlign: 'center',
-    width: '100%'
+    width: '100%',
+    maxHeight: '90vh',
+    overflowY: 'auto'
   },
   timerBox: {
     background: 'rgba(0, 0, 0, 0.3)',
-    padding: '8px',
+    padding: 'clamp(6px, 1.5vh, 10px)',
     borderRadius: '6px',
     margin: '8px 0'
   },
   summaryTable: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '10px',
+    fontSize: 'clamp(9px, 1.8vh, 11px)',
     background: 'rgba(0, 0, 0, 0.2)',
     borderRadius: '4px',
     overflow: 'hidden'
   },
   th: {
-    padding: '5px',
+    padding: 'clamp(3px, 0.8vh, 6px)',
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#cbd5e0',
     textAlign: 'left'
   } as React.CSSProperties,
   td: {
-    padding: '5px',
+    padding: 'clamp(3px, 0.8vh, 6px)',
     borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
     textAlign: 'left'
   } as React.CSSProperties
