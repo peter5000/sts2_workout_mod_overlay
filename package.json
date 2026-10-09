@@ -7,8 +7,8 @@
     "start:daemon": "ts-node src/daemon/index.ts",
     "start:overlay": "electron .",
     "simulate": "ts-node scripts/simulate.ts",
-    "build": "tsc",
-    "test": "jest"
+    "build": "tsc && node scripts/copy-assets.js",
+    "test": "ts-node test/engine.test.ts"
   },
   "keywords": [
     "slay-the-spire-2",
@@ -32,8 +32,12 @@
     "@types/cors": "^2.8.15",
     "@types/express": "^4.17.20",
     "@types/node": "^20.8.10",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.5.8",
     "electron": "^27.0.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.2.2"
   }

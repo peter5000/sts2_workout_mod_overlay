@@ -1,0 +1,112 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import chokidar from 'chokidar';
+import { RawRunSaveData } from '../shared/types';
+
+export type SaveFileChangeCallback = (data: RawRunSaveData) => void;
+
+export class SaveWatcher {
+  private targetDir: string;
+  private watcher: chokidar.FSWatcher | null = null;
+  private lastSHA256: string = '';
+  private debounceTimer: NodeJS.Timeout | null = null;
+  private isProcessing: boolean = false;
+  private callback: SaveFileChangeCallback;
+
+  constructor(targetDir: string, callback: SaveFileChangeCallback) {
+    this.targetDir = targetDir;
+    this.callback = callback;
+  }
+
+  public start(): void {
+    if (!fs.existsSync(this.targetDir)) {
+      fs.mkdirSync(this.targetDir, { recursive: true });
+    }
+
+    console.log(`[SAVE WATCHER] Watching directory: ${this.targetDir}`);
+
+    this.watcher = chokidar.watch(this.targetDir, {
+      persistent: true,
+      ignoreInitial: false,
+      awaitWriteFinish: false,
+      depth: 1
+    });
+
+    const triggerFileCheck = (filePath: string) => {
+      const fileName = path.basename(filePath);
+      if (fileName === 'current_run.save' || fileName === 'current_run_mp.save') {
+        this.scheduleDebouncedRead(filePath);
+      }
+    };
+
+    this.watcher.on('add', triggerFileCheck);
+    this.watcher.on('change', triggerFileCheck);
+  }
+
+  public stop(): void {
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+  }
+
+  private scheduleDebouncedRead(filePath: string): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    // 75ms debounce delay per architecture specification
+    this.debounceTimer = setTimeout(() => {
+      this.readSaveWithRetry(filePath);
+    }, 75);
+  }
+
+  private async readSaveWithRetry(filePath: string): Promise<void> {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+
+    const delays = [25, 50, 100, 200];
+    let content: string | null = null;
+
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        content = fs.readFileSync(filePath, 'utf-8');
+        break; // Read successful
+      } catch (err: any) {
+        if (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') {
+          if (attempt < delays.length) {
+            await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+            continue;
+          }
+        }
+        console.error(`[SAVE WATCHER ERROR] Failed to read save file after retries:`, err);
+        this.isProcessing = false;
+        return;
+      }
+    }
+
+    if (!content) {
+      this.isProcessing = false;
+      return;
+    }
+
+    // Compute SHA-256 hash digest to check for payload duplication
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    if (hash === this.lastSHA256) {
+      this.isProcessing = false;
+      return; // Payload unchanged
+    }
+
+    this.lastSHA256 = hash;
+
+    try {
+      const parsed = JSON.parse(content) as RawRunSaveData;
+      console.log(`[SAVE WATCHER] Parsed save checkpoint update for run_id: ${parsed.run_id}`);
+      this.callback(parsed);
+    } catch (err) {
+      console.error(`[SAVE WATCHER ERROR] Failed to parse save file JSON:`, err);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+}
