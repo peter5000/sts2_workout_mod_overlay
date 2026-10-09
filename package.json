@@ -1,5 +1,5 @@
 {
-  "name": "sts2-workout-helper",
+  "name": "sts2_workout_mod_overlay",
   "version": "1.1.0",
   "description": "Out-of-process workout debt tracker and transparent HUD overlay for Slay the Spire 2",
   "main": "dist/overlay/main.js",
