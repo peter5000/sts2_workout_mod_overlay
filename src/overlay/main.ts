@@ -4,13 +4,22 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let mainWindow: BrowserWindow | null = null;
+let windowA: BrowserWindow | null = null;
+let windowB: BrowserWindow | null = null;
 let isClickThrough: boolean = false;
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 480,
-    height: 720,
+function createWindows() {
+  const commonWebPreferences = {
+    nodeIntegration: true,
+    contextIsolation: false
+  };
+
+  const htmlPath = path.join(__dirname, 'index.html');
+
+  // Window A: Panel A (Remainder Resolver & Workout Reps)
+  windowA = new BrowserWindow({
+    width: 380,
+    height: 340,
     x: 50,
     y: 50,
     frame: false,
@@ -18,37 +27,48 @@ function createWindow() {
     alwaysOnTop: process.env.ELECTRON_ALWAYS_ON_TOP !== 'false',
     resizable: true,
     hasShadow: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
+    webPreferences: commonWebPreferences
   });
+  windowA.loadFile(htmlPath, { query: { panel: 'a' } });
 
-  const htmlPath = path.join(__dirname, 'index.html');
-  mainWindow.loadFile(htmlPath);
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  // Window B: Panel B (Aggregate Ledger & Squat Ratio)
+  windowB = new BrowserWindow({
+    width: 380,
+    height: 240,
+    x: 50,
+    y: 410,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: process.env.ELECTRON_ALWAYS_ON_TOP !== 'false',
+    resizable: true,
+    hasShadow: false,
+    webPreferences: commonWebPreferences
   });
+  windowB.loadFile(htmlPath, { query: { panel: 'b' } });
 
-  // Global hotkey to toggle Click-Through Mode (Ctrl+Shift+X)
+  windowA.on('closed', () => { windowA = null; });
+  windowB.on('closed', () => { windowB = null; });
+
+  // Register Global Hotkey to toggle Click-Through Mode for both windows (Ctrl+Shift+X)
   globalShortcut.register('CommandOrControl+Shift+X', () => {
     toggleClickThrough();
   });
 }
 
 function toggleClickThrough(forceState?: boolean) {
-  if (!mainWindow) return;
-
   isClickThrough = forceState !== undefined ? forceState : !isClickThrough;
 
-  if (isClickThrough) {
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
-  } else {
-    mainWindow.setIgnoreMouseEvents(false);
-  }
-
-  mainWindow.webContents.send('click-through-changed', isClickThrough);
+  const windows = [windowA, windowB];
+  windows.forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      if (isClickThrough) {
+        win.setIgnoreMouseEvents(true, { forward: true });
+      } else {
+        win.setIgnoreMouseEvents(false);
+      }
+      win.webContents.send('click-through-changed', isClickThrough);
+    }
+  });
 }
 
 ipcMain.on('set-click-through', (event, ignore: boolean) => {
@@ -56,11 +76,11 @@ ipcMain.on('set-click-through', (event, ignore: boolean) => {
 });
 
 app.whenReady().then(() => {
-  createWindow();
+  createWindows();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+    if (!windowA && !windowB) {
+      createWindows();
     }
   });
 });
