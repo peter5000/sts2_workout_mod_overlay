@@ -1,0 +1,40 @@
+{
+  "name": "sts2-workout-helper",
+  "version": "1.1.0",
+  "description": "Out-of-process workout debt tracker and transparent HUD overlay for Slay the Spire 2",
+  "main": "dist/overlay/main.js",
+  "scripts": {
+    "start:daemon": "ts-node src/daemon/index.ts",
+    "start:overlay": "electron .",
+    "simulate": "ts-node scripts/simulate.ts",
+    "build": "tsc",
+    "test": "jest"
+  },
+  "keywords": [
+    "slay-the-spire-2",
+    "workout",
+    "fitness",
+    "overlay",
+    "godot",
+    "daemon"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.15",
+    "@types/express": "^4.17.20",
+    "@types/node": "^20.8.10",
+    "@types/ws": "^8.5.8",
+    "electron": "^27.0.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}
