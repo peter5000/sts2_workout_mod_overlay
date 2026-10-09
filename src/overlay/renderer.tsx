@@ -11,16 +11,16 @@ const WS_URL = 'ws://127.0.0.1:8765';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<ActiveSessionStore | null>(null);
-  const selectedPlayerIdx = 0; // Show strictly local player stats during active gameplay
+  const selectedPlayerIdx = 0; // Show strictly local player stats
   const [repsInput, setRepsInput] = useState<string>('10');
   const [clickThrough, setClickThrough] = useState<boolean>(false);
   const [showStartModal, setShowStartModal] = useState<boolean>(false);
   const [startRatio, setStartRatio] = useState<number>(2);
   const [countdownText, setCountdownText] = useState<string>('24:00:00');
 
-  // Independent panel collapse/expand state for widget separation
-  const [panelACollapsed, setPanelACollapsed] = useState<boolean>(false);
-  const [panelBCollapsed, setPanelBCollapsed] = useState<boolean>(false);
+  // Detect which panel this window instance represents ('a', 'b', or 'all')
+  const urlParams = new URLSearchParams(window.location.search);
+  const targetPanel = urlParams.get('panel') || 'all';
 
   // Fetch initial state snapshot from REST API
   const fetchState = async () => {
@@ -151,12 +151,17 @@ const App: React.FC = () => {
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
   const ratio = session?.squat_ratio || 2;
 
+  const showPanelA = targetPanel === 'a' || targetPanel === 'all';
+  const showPanelB = targetPanel === 'b' || targetPanel === 'all';
+
   return (
     <div style={styles.container}>
-      {/* Title Bar & Click-Through Control */}
+      {/* Window Drag & Control Header */}
       <div style={styles.header}>
-        <div style={{ fontWeight: 'bold', fontSize: '13px', letterSpacing: '0.5px', color: '#edf2f7' }}>
-          🏋️ Workout Overlay
+        <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#edf2f7' }}>
+          {targetPanel === 'a' && '🏋️ Panel A: Debt Resolver'}
+          {targetPanel === 'b' && '📊 Panel B: Run Ledger'}
+          {targetPanel === 'all' && '🏋️ StS2 Workout HUD'}
         </div>
         <button
           onClick={() => ipcRenderer.send('set-click-through', !clickThrough)}
@@ -169,95 +174,73 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {/* PANEL A: Remainder Resolver (Independent Widget) */}
-      <div style={styles.panel}>
-        <div style={styles.panelHeader} onClick={() => setPanelACollapsed(!panelACollapsed)}>
-          <div style={styles.panelTitle}>PANEL A: REMAINDER RESOLVER</div>
-          <button style={styles.toggleBtn}>{panelACollapsed ? '▲ Expand' : '▼ Collapse'}</button>
-        </div>
-
-        {!panelACollapsed ? (
-          <>
-            <div style={styles.counterBox}>
-              <div style={{ fontSize: '11px', color: '#a0aec0', fontWeight: 'bold' }}>UNRESOLVED DEBT (YOURS)</div>
-              <div style={{ fontSize: '34px', fontWeight: 'bold', color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
-                {activeDebt} <span style={{ fontSize: '16px' }}>wc</span>
-              </div>
+      {/* PANEL A: Remainder Resolver Window */}
+      {showPanelA && (
+        <div style={styles.panel}>
+          <div style={styles.counterBox}>
+            <div style={{ fontSize: '11px', color: '#a0aec0', fontWeight: 'bold' }}>UNRESOLVED DEBT (YOURS)</div>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
+              {activeDebt} <span style={{ fontSize: '16px' }}>wc</span>
             </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-              <input
-                type="number"
-                min="1"
-                value={repsInput}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepsInput(e.target.value)}
-                style={styles.input}
-                placeholder="Reps"
-              />
-              <button onClick={() => handleResolveReps('CUSTOM_ENTRY', 'pushups')} style={styles.btnPrimary}>
-                Log Push-ups
-              </button>
-              <button onClick={() => handleResolveReps('CUSTOM_ENTRY', 'squats')} style={styles.btnPrimary}>
-                Log Squats
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => handleResolveReps('ALL_PUSHUPS')} style={styles.btnClear}>
-                All Push-ups ({activeDebt})
-              </button>
-              <button onClick={() => handleResolveReps('ALL_SQUATS')} style={styles.btnClear}>
-                All Squats ({activeDebt * ratio})
-              </button>
-            </div>
-          </>
-        ) : (
-          <div style={styles.summaryPill}>
-            <span>Debt: <strong style={{ color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>{activeDebt} wc</strong></span>
           </div>
-        )}
-      </div>
 
-      {/* PANEL B: Aggregate Ledger (Independent Widget) */}
-      <div style={styles.panel}>
-        <div style={styles.panelHeader} onClick={() => setPanelBCollapsed(!panelBCollapsed)}>
-          <div style={styles.panelTitle}>PANEL B: AGGREGATE LEDGER</div>
-          <button style={styles.toggleBtn}>{panelBCollapsed ? '▲ Expand' : '▼ Collapse'}</button>
-        </div>
-
-        {!panelBCollapsed ? (
-          <>
-            <div style={styles.statGrid}>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Push-ups</div>
-                <div style={styles.statVal}>{activeAggs.pushups}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Squats</div>
-                <div style={styles.statVal}>{activeAggs.squats}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Total Accrued</div>
-                <div style={styles.statVal}>{activeAggs.accrued} wc</div>
-              </div>
-            </div>
-
-            <div style={styles.ratioRow}>
-              <span>Squat Ratio (R): </span>
-              <button onClick={() => handleUpdateRatio(ratio - 1)} style={styles.stepperBtn}>-</button>
-              <span style={{ fontWeight: 'bold', padding: '0 8px' }}>R = {ratio}</span>
-              <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
-            </div>
-          </>
-        ) : (
-          <div style={styles.summaryPill}>
-            <span>Totals: <strong>{activeAggs.pushups} Push-ups | {activeAggs.squats} Squats (R={ratio})</strong></span>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            <input
+              type="number"
+              min="1"
+              value={repsInput}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepsInput(e.target.value)}
+              style={styles.input}
+              placeholder="Reps"
+            />
+            <button onClick={() => handleResolveReps('CUSTOM_ENTRY', 'pushups')} style={styles.btnPrimary}>
+              Log Push-ups
+            </button>
+            <button onClick={() => handleResolveReps('CUSTOM_ENTRY', 'squats')} style={styles.btnPrimary}>
+              Log Squats
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* MODAL 1: Run Start Prompt */}
-      {showStartModal && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => handleResolveReps('ALL_PUSHUPS')} style={styles.btnClear}>
+              All Push-ups ({activeDebt})
+            </button>
+            <button onClick={() => handleResolveReps('ALL_SQUATS')} style={styles.btnClear}>
+              All Squats ({activeDebt * ratio})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL B: Aggregate Ledger Window */}
+      {showPanelB && (
+        <div style={styles.panel}>
+          <div style={styles.statGrid}>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Push-ups</div>
+              <div style={styles.statVal}>{activeAggs.pushups}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Squats</div>
+              <div style={styles.statVal}>{activeAggs.squats}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Accrued</div>
+              <div style={styles.statVal}>{activeAggs.accrued} wc</div>
+            </div>
+          </div>
+
+          <div style={styles.ratioRow}>
+            <span>Squat Ratio: </span>
+            <button onClick={() => handleUpdateRatio(ratio - 1)} style={styles.stepperBtn}>-</button>
+            <span style={{ fontWeight: 'bold', padding: '0 8px' }}>R = {ratio}</span>
+            <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: Run Start Prompt (Rendered on Panel A or All) */}
+      {showStartModal && showPanelA && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             <h3 style={{ color: '#63b3ed' }}>🚀 RUN START INITIALIZED</h3>
@@ -275,21 +258,21 @@ const App: React.FC = () => {
               />
             </div>
             <button onClick={handleConfirmStart} style={styles.btnSuccess}>
-              Confirm & Arm Workout Engine
+              Confirm & Arm Engine
             </button>
           </div>
         </div>
       )}
 
       {/* MODAL 2: Run Outcome Screen (Shows All Players Stats) */}
-      {session?.run_status !== 'ACTIVE' && (
+      {session?.run_status !== 'ACTIVE' && showPanelA && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             {session?.run_status === 'VICTORY' ? (
               <>
                 <h2 style={{ color: '#68d391' }}>🏆 VICTORY ACHIEVED!</h2>
                 <p style={{ margin: '8px 0', fontSize: '13px', color: '#cbd5e0' }}>
-                  All floors cleared! Here is the final party workout summary:
+                  All floors cleared! Final party workout summary:
                 </p>
               </>
             ) : (
@@ -309,14 +292,14 @@ const App: React.FC = () => {
 
             {/* PARTY SUMMARY TABLE FOR ALL PLAYERS */}
             <div style={{ margin: '14px 0', textAlign: 'left' }}>
-              <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#a0aec0', marginBottom: '6px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#a0aec0', marginBottom: '6px' }}>
                 PARTY SUMMARY (ALL PLAYERS)
               </div>
               <table style={styles.summaryTable}>
                 <thead>
                   <tr>
                     <th style={styles.th}>Player</th>
-                    <th style={styles.th}>Unresolved</th>
+                    <th style={styles.th}>Debt</th>
                     <th style={styles.th}>Push-ups</th>
                     <th style={styles.th}>Squats</th>
                     <th style={styles.th}>Deaths</th>
@@ -357,25 +340,25 @@ const App: React.FC = () => {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: '10px',
+    padding: '8px',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px'
+    gap: '8px'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: '6px',
+    paddingBottom: '4px',
     borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
     WebkitAppRegion: 'drag'
   } as React.CSSProperties,
   badge: {
-    padding: '4px 8px',
+    padding: '3px 6px',
     borderRadius: '4px',
     color: '#fff',
-    fontSize: '10px',
+    fontSize: '9px',
     fontWeight: 'bold',
     border: 'none',
     cursor: 'pointer',
@@ -388,37 +371,12 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '8px',
     border: '1px solid rgba(255, 255, 255, 0.12)'
   },
-  panelHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    cursor: 'pointer',
-    marginBottom: '6px'
-  },
-  panelTitle: {
-    fontSize: '11px',
-    fontWeight: 'bold',
-    color: '#cbd5e0',
-    letterSpacing: '0.5px'
-  },
-  toggleBtn: {
-    background: 'transparent',
-    border: 'none',
-    color: '#a0aec0',
-    fontSize: '10px',
-    cursor: 'pointer'
-  },
-  summaryPill: {
-    fontSize: '12px',
-    color: '#e2e8f0',
-    padding: '4px 0'
-  },
   counterBox: {
     textAlign: 'center',
-    padding: '10px',
+    padding: '8px',
     background: 'rgba(0, 0, 0, 0.25)',
     borderRadius: '6px',
-    marginBottom: '10px'
+    marginBottom: '8px'
   },
   input: {
     width: '65px',
@@ -427,11 +385,11 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(255, 255, 255, 0.2)',
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#fff',
-    fontSize: '13px'
+    fontSize: '12px'
   },
   btnPrimary: {
     flex: 1,
-    padding: '6px 10px',
+    padding: '6px 8px',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(49, 130, 206, 0.85)',
@@ -442,7 +400,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   btnClear: {
     flex: 1,
-    padding: '6px 10px',
+    padding: '6px 8px',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(128, 90, 213, 0.85)',
@@ -460,13 +418,13 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
-    fontSize: '13px'
+    fontSize: '12px'
   },
   statGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '6px',
-    marginBottom: '8px'
+    marginBottom: '6px'
   },
   statCard: {
     background: 'rgba(0, 0, 0, 0.25)',
@@ -475,11 +433,11 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center'
   },
   statLabel: {
-    fontSize: '10px',
+    fontSize: '9px',
     color: '#a0aec0'
   },
   statVal: {
-    fontSize: '15px',
+    fontSize: '14px',
     fontWeight: 'bold',
     color: '#edf2f7'
   },
@@ -491,8 +449,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '4px'
   },
   stepperBtn: {
-    width: '22px',
-    height: '22px',
+    width: '20px',
+    height: '20px',
     borderRadius: '4px',
     border: 'none',
     background: 'rgba(255, 255, 255, 0.15)',
@@ -511,12 +469,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '16px',
+    padding: '12px',
     borderRadius: '12px'
   },
   modalCard: {
     background: 'rgba(26, 32, 44, 0.95)',
-    padding: '16px',
+    padding: '14px',
     borderRadius: '8px',
     border: '1px solid rgba(255, 255, 255, 0.15)',
     textAlign: 'center',
@@ -524,26 +482,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   timerBox: {
     background: 'rgba(0, 0, 0, 0.3)',
-    padding: '10px',
+    padding: '8px',
     borderRadius: '6px',
-    margin: '10px 0'
+    margin: '8px 0'
   },
   summaryTable: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '11px',
+    fontSize: '10px',
     background: 'rgba(0, 0, 0, 0.2)',
     borderRadius: '4px',
     overflow: 'hidden'
   },
   th: {
-    padding: '6px',
+    padding: '5px',
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#cbd5e0',
     textAlign: 'left'
   } as React.CSSProperties,
   td: {
-    padding: '6px',
+    padding: '5px',
     borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
     textAlign: 'left'
   } as React.CSSProperties
