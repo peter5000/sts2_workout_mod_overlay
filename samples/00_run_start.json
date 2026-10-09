@@ -1,0 +1,11 @@
+{
+  "run_id": "mp_run_20261009_001",
+  "is_multiplayer": true,
+  "player_count": 2,
+  "players": [
+    { "index": 0, "name": "HostPlayer", "character": "IRONCLAD" },
+    { "index": 1, "name": "AllyPlayer", "character": "SILENT" }
+  ],
+  "run_status": "ACTIVE",
+  "floors": []
+}
