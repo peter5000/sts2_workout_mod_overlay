@@ -18,6 +18,9 @@ const App: React.FC = () => {
   const [startRatio, setStartRatio] = useState<number>(2);
   const [countdownText, setCountdownText] = useState<string>('24:00:00');
 
+  // Collapsible Squat Ratio section state
+  const [ratioCollapsed, setRatioCollapsed] = useState<boolean>(false);
+
   // Detect which panel window this instance represents ('a', 'b', or 'all')
   const urlParams = new URLSearchParams(window.location.search);
   const targetPanel = urlParams.get('panel') || 'all';
@@ -156,7 +159,7 @@ const App: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* Header Bar */}
+      {/* Header Bar with Click Through (Ctrl+Shift+X) actual command text */}
       <div style={styles.header}>
         <div style={styles.headerTitle}>
           {targetPanel === 'a' && '🏋️ Panel A: Debt Resolver'}
@@ -170,7 +173,7 @@ const App: React.FC = () => {
             backgroundColor: clickThrough ? 'rgba(229, 62, 62, 0.85)' : 'rgba(49, 151, 149, 0.85)'
           }}
         >
-          {clickThrough ? 'Click-Through ON' : 'Click-Through OFF'}
+          {clickThrough ? 'Click through ON (Ctrl+Shift+X)' : 'Click through OFF (Ctrl+Shift+X)'}
         </button>
       </div>
 
@@ -178,7 +181,7 @@ const App: React.FC = () => {
       {showPanelA && (
         <div style={styles.panel}>
           <div style={styles.counterBox}>
-            <div style={styles.counterLabel}>UNRESOLVED DEBT (YOURS)</div>
+            <div style={styles.counterLabel}>REMAINING WORKOUT COUNT (YOURS)</div>
             <div style={{ ...styles.counterValue, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
               {activeDebt} <span style={styles.unitText}>wc</span>
             </div>
@@ -225,16 +228,26 @@ const App: React.FC = () => {
               <div style={styles.statVal}>{activeAggs.squats}</div>
             </div>
             <div style={styles.statCard}>
-              <div style={styles.statLabel}>Accrued</div>
-              <div style={styles.statVal}>{activeAggs.accrued} wc</div>
+              <div style={styles.statLabel}>Remaining workout count</div>
+              <div style={{ ...styles.statVal, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>{activeDebt} wc</div>
             </div>
           </div>
 
+          {/* Collapsible Squat Ratio with small arrow */}
           <div style={styles.ratioRow}>
-            <span>Squat Ratio: </span>
-            <button onClick={() => handleUpdateRatio(ratio - 1)} style={styles.stepperBtn}>-</button>
-            <span style={{ fontWeight: 'bold', padding: '0 6px' }}>R = {ratio}</span>
-            <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
+            <button
+              onClick={() => setRatioCollapsed(!ratioCollapsed)}
+              style={styles.ratioToggleBtn}
+            >
+              {ratioCollapsed ? `▶ Squat Ratio (R = ${ratio})` : '▼ Squat Ratio'}
+            </button>
+            {!ratioCollapsed && (
+              <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+                <button onClick={() => handleUpdateRatio(ratio - 1)} style={styles.stepperBtn}>-</button>
+                <span style={{ fontWeight: 'bold', padding: '0 6px' }}>R = {ratio}</span>
+                <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -491,8 +504,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px'
   },
   statLabel: {
-    fontSize: 'clamp(8px, 1.8vh, 11px)',
-    color: '#a0aec0'
+    fontSize: 'clamp(8px, 1.8vh, 10px)',
+    color: '#a0aec0',
+    textAlign: 'center'
   },
   statVal: {
     fontSize: 'clamp(12px, 3.2vh, 20px)',
@@ -503,8 +517,17 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     fontSize: 'clamp(10px, 2.2vh, 14px)'
+  },
+  ratioToggleBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#cbd5e0',
+    fontSize: 'clamp(10px, 2.2vh, 13px)',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    padding: 0
   },
   stepperBtn: {
     width: 'clamp(18px, 4vh, 24px)',

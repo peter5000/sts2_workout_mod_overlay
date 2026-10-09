@@ -4,6 +4,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Enforce Single Instance Lock to prevent process & Alt+Tab multiplication
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
 let windowA: BrowserWindow | null = null;
 let windowB: BrowserWindow | null = null;
 let isClickThrough: boolean = false;
@@ -27,6 +33,7 @@ function createWindows() {
     frame: false,
     transparent: true,
     alwaysOnTop: process.env.ELECTRON_ALWAYS_ON_TOP !== 'false',
+    skipTaskbar: true, // Prevents Taskbar & Alt+Tab window multiplication
     resizable: true,
     hasShadow: false,
     webPreferences: commonWebPreferences
@@ -44,6 +51,7 @@ function createWindows() {
     frame: false,
     transparent: true,
     alwaysOnTop: process.env.ELECTRON_ALWAYS_ON_TOP !== 'false',
+    skipTaskbar: true, // Prevents Taskbar & Alt+Tab window multiplication
     resizable: true,
     hasShadow: false,
     webPreferences: commonWebPreferences
@@ -77,6 +85,12 @@ function toggleClickThrough(forceState?: boolean) {
 
 ipcMain.on('set-click-through', (event, ignore: boolean) => {
   toggleClickThrough(ignore);
+});
+
+app.on('second-instance', () => {
+  if (windowA && !windowA.isDestroyed()) {
+    windowA.focus();
+  }
 });
 
 app.whenReady().then(() => {
