@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import chokidar from 'chokidar';
 import { RawRunSaveData } from '../shared/types';
+import { normalizeSaveData } from './adapter';
 
 export type SaveFileChangeCallback = (data: RawRunSaveData) => void;
 
@@ -30,18 +31,50 @@ export class SaveWatcher {
       persistent: true,
       ignoreInitial: false,
       awaitWriteFinish: false,
-      depth: 1
+      depth: 2
     });
 
     const triggerFileCheck = (filePath: string) => {
       const fileName = path.basename(filePath);
-      if (fileName === 'current_run.save' || fileName === 'current_run_mp.save') {
+      const isCurrentSave = fileName === 'current_run.save' || fileName === 'current_run_mp.save';
+      const isHistoryRun = (filePath.includes('history') || filePath.includes('saves')) && (fileName.endsWith('.run') || fileName.endsWith('.save')) && fileName !== 'prefs.save' && fileName !== 'progress.save';
+
+      if (isCurrentSave || isHistoryRun) {
         this.scheduleDebouncedRead(filePath);
+      }
+    };
+
+    const handleUnlink = (filePath: string) => {
+      const fileName = path.basename(filePath);
+      if (fileName === 'current_run.save' || fileName === 'current_run_mp.save') {
+        console.log(`[SAVE WATCHER] current_run.save removed. Checking history directory for completed run...`);
+        this.checkLatestHistoryRun();
       }
     };
 
     this.watcher.on('add', triggerFileCheck);
     this.watcher.on('change', triggerFileCheck);
+    this.watcher.on('unlink', handleUnlink);
+  }
+
+  private checkLatestHistoryRun(): void {
+    const historyDir = path.join(this.targetDir, 'history');
+    if (!fs.existsSync(historyDir)) return;
+
+    try {
+      const files = fs.readdirSync(historyDir)
+        .filter((f) => f.endsWith('.run') || (f.endsWith('.save') && !f.startsWith('prefs') && !f.startsWith('progress')))
+        .map((f) => path.join(historyDir, f))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+      if (files.length > 0) {
+        const latestHistoryFile = files[0];
+        console.log(`[SAVE WATCHER] Ingesting latest run history file: ${latestHistoryFile}`);
+        this.scheduleDebouncedRead(latestHistoryFile);
+      }
+    } catch (err) {
+      console.error(`[SAVE WATCHER ERROR] Failed to check history directory:`, err);
+    }
   }
 
   public stop(): void {
@@ -100,7 +133,8 @@ export class SaveWatcher {
     this.lastSHA256 = hash;
 
     try {
-      const parsed = JSON.parse(content) as RawRunSaveData;
+      const raw = JSON.parse(content);
+      const parsed = normalizeSaveData(raw);
       console.log(`[SAVE WATCHER] Parsed save checkpoint update for run_id: ${parsed.run_id}`);
       this.callback(parsed);
     } catch (err) {

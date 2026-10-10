@@ -24,6 +24,8 @@ export class DebtLedger {
   private playerDebts: Map<number, number> = new Map();
   private playerDeaths: Map<number, number> = new Map();
   private playerAggregates: Map<number, { accrued: number; pushups: number; squats: number }> = new Map();
+  private playerSquatRemainders: Map<number, number> = new Map();
+  private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
 
   private jogPenaltyActive: boolean = false;
   private jogPenaltyDeadline: number | null = null;
@@ -42,21 +44,36 @@ export class DebtLedger {
   } {
     let isNewRun = false;
 
-    // Check if this is a new run
-    if (this.runId !== runData.run_id) {
-      this.initNewRun(runData);
-      isNewRun = true;
+    const safeRunId = runData?.run_id || `run_${Date.now()}`;
+    const safePlayers = Array.isArray(runData?.players) ? runData.players : [];
+    const safeFloors = Array.isArray(runData?.floors) ? runData.floors : [];
+
+    // Check if this is a new run or switching active run
+    if (this.runId !== safeRunId) {
+      if (this.runId) {
+        this.activeSessionsMap.set(this.runId, this.getFullState());
+      }
+      if (this.activeSessionsMap.has(safeRunId)) {
+        this.loadRunStateFromStore(this.activeSessionsMap.get(safeRunId)!);
+        this.players = safePlayers;
+        this.isMultiplayer = Boolean(runData?.is_multiplayer);
+        this.playerCount = runData?.player_count || safePlayers.length || 1;
+        isNewRun = false;
+      } else {
+        this.initNewRun(runData);
+        isNewRun = true;
+      }
     } else {
-      this.players = runData.players;
-      this.isMultiplayer = runData.is_multiplayer;
-      this.playerCount = runData.player_count;
+      this.players = safePlayers;
+      this.isMultiplayer = Boolean(runData?.is_multiplayer);
+      this.playerCount = runData?.player_count || safePlayers.length || 1;
     }
 
     let commitData: FloorCommitData | null = null;
 
     // Parse unprocessed floors sequentially
-    const sortedFloors = [...runData.floors].sort((a, b) => a.floor_num - b.floor_num);
-    const newFloors = sortedFloors.filter((f) => f.floor_num > this.lastProcessedFloor);
+    const sortedFloors = [...safeFloors].sort((a, b) => (a.floor_num || 0) - (b.floor_num || 0));
+    const newFloors = sortedFloors.filter((f) => f && f.floor_num > this.lastProcessedFloor);
 
     if (newFloors.length > 0) {
       const allReports: PlayerFloorReport[] = [];
@@ -102,6 +119,7 @@ export class DebtLedger {
     const currentDebt = this.playerDebts.get(idx) || 0;
     const aggs = this.playerAggregates.get(idx) || { accrued: 0, pushups: 0, squats: 0 };
     const ratio = payload.applied_ratio || this.squatRatio;
+    const currentRemainder = this.playerSquatRemainders.get(idx) || 0;
 
     let debtDeduction = 0;
     let pushupsAdded = 0;
@@ -111,10 +129,13 @@ export class DebtLedger {
       case 'CUSTOM_ENTRY':
         const reps = payload.reps || 0;
         if (payload.exercise === 'pushups') {
-          debtDeduction = reps;
+          debtDeduction = Math.min(reps, currentDebt);
           pushupsAdded = reps;
         } else if (payload.exercise === 'squats') {
-          debtDeduction = Math.floor(reps / ratio);
+          const totalSquats = currentRemainder + reps;
+          debtDeduction = Math.min(Math.floor(totalSquats / ratio), currentDebt);
+          const newRemainder = totalSquats % ratio;
+          this.playerSquatRemainders.set(idx, newRemainder);
           squatsAdded = reps;
         }
         break;
@@ -126,7 +147,9 @@ export class DebtLedger {
 
       case 'ALL_SQUATS':
         debtDeduction = currentDebt;
-        squatsAdded = currentDebt * ratio;
+        const totalSquatsNeeded = Math.max(currentDebt * ratio - currentRemainder, 0);
+        squatsAdded = totalSquatsNeeded;
+        this.playerSquatRemainders.set(idx, 0);
         break;
     }
 
@@ -163,10 +186,12 @@ export class DebtLedger {
     const debtsObj: Record<number, number> = {};
     const deathsObj: Record<number, number> = {};
     const aggsObj: Record<number, { accrued: number; pushups: number; squats: number }> = {};
+    const remaindersObj: Record<number, number> = {};
 
     this.playerDebts.forEach((val, key) => (debtsObj[key] = val));
     this.playerDeaths.forEach((val, key) => (deathsObj[key] = val));
     this.playerAggregates.forEach((val, key) => (aggsObj[key] = val));
+    this.playerSquatRemainders.forEach((val, key) => (remaindersObj[key] = val));
 
     return {
       run_id: this.runId,
@@ -178,6 +203,7 @@ export class DebtLedger {
       player_debts: debtsObj,
       player_deaths: deathsObj,
       player_aggregates: aggsObj,
+      player_squat_remainders: remaindersObj,
       run_status: this.runStatus,
       jog_penalty: {
         active: this.jogPenaltyActive,
@@ -203,21 +229,24 @@ export class DebtLedger {
   }
 
   private initNewRun(runData: RawRunSaveData): void {
-    this.runId = runData.run_id;
-    this.isMultiplayer = runData.is_multiplayer;
-    this.playerCount = runData.player_count;
-    this.players = runData.players;
+    this.runId = runData?.run_id || `run_${Date.now()}`;
+    this.isMultiplayer = Boolean(runData?.is_multiplayer);
+    this.players = Array.isArray(runData?.players) ? runData.players : [];
+    this.playerCount = runData?.player_count || this.players.length || 1;
     this.lastProcessedFloor = 0;
     this.runStatus = 'ACTIVE';
 
     this.playerDebts.clear();
     this.playerDeaths.clear();
     this.playerAggregates.clear();
+    this.playerSquatRemainders.clear();
 
-    for (const p of runData.players) {
-      this.playerDebts.set(p.index, 0);
-      this.playerDeaths.set(p.index, 0);
-      this.playerAggregates.set(p.index, { accrued: 0, pushups: 0, squats: 0 });
+    for (const p of this.players) {
+      const idx = typeof p.index === 'number' ? p.index : 0;
+      this.playerDebts.set(idx, 0);
+      this.playerDeaths.set(idx, 0);
+      this.playerAggregates.set(idx, { accrued: 0, pushups: 0, squats: 0 });
+      this.playerSquatRemainders.set(idx, 0);
     }
   }
 
@@ -260,6 +289,8 @@ export class DebtLedger {
       jog_penalty_applied: isDefeat
     });
 
+    this.activeSessionsMap.delete(this.runId);
+
     return {
       type: 'RUN_TERMINATED',
       timestamp: Date.now(),
@@ -274,25 +305,45 @@ export class DebtLedger {
   }
 
   private persistCurrentState(): void {
-    this.persistence.saveActiveSession(this.getFullState());
+    if (this.runId) {
+      this.activeSessionsMap.set(this.runId, this.getFullState());
+    }
+    const sessionsObj: Record<string, ActiveSessionStore> = {};
+    this.activeSessionsMap.forEach((val, key) => (sessionsObj[key] = val));
+    this.persistence.saveActiveSessions(this.runId, sessionsObj);
   }
 
   private restoreFromPersistence(): void {
-    const saved = this.persistence.loadActiveSession();
-    if (saved) {
-      this.runId = saved.run_id;
-      this.isMultiplayer = saved.is_multiplayer;
-      this.playerCount = saved.player_count;
-      this.squatRatio = saved.squat_ratio;
-      this.optIn = saved.opt_in;
-      this.lastProcessedFloor = saved.last_processed_floor;
-      this.runStatus = saved.run_status;
-      this.jogPenaltyActive = saved.jog_penalty.active;
-      this.jogPenaltyDeadline = saved.jog_penalty.deadline_timestamp;
+    const mapStore = this.persistence.loadActiveSessions();
+    if (mapStore) {
+      Object.entries(mapStore.sessions || {}).forEach(([k, v]) => this.activeSessionsMap.set(k, v));
+      if (mapStore.current_run_id && this.activeSessionsMap.has(mapStore.current_run_id)) {
+        this.loadRunStateFromStore(this.activeSessionsMap.get(mapStore.current_run_id)!);
+      }
+    }
+  }
 
-      Object.entries(saved.player_debts).forEach(([k, v]) => this.playerDebts.set(Number(k), v));
-      Object.entries(saved.player_deaths).forEach(([k, v]) => this.playerDeaths.set(Number(k), v));
-      Object.entries(saved.player_aggregates).forEach(([k, v]) => this.playerAggregates.set(Number(k), v));
+  private loadRunStateFromStore(saved: ActiveSessionStore): void {
+    this.runId = saved.run_id;
+    this.isMultiplayer = saved.is_multiplayer;
+    this.playerCount = saved.player_count;
+    this.squatRatio = saved.squat_ratio;
+    this.optIn = saved.opt_in;
+    this.lastProcessedFloor = saved.last_processed_floor;
+    this.runStatus = saved.run_status;
+    this.jogPenaltyActive = saved.jog_penalty?.active || false;
+    this.jogPenaltyDeadline = saved.jog_penalty?.deadline_timestamp || null;
+
+    this.playerDebts.clear();
+    this.playerDeaths.clear();
+    this.playerAggregates.clear();
+    this.playerSquatRemainders.clear();
+
+    Object.entries(saved.player_debts || {}).forEach(([k, v]) => this.playerDebts.set(Number(k), v));
+    Object.entries(saved.player_deaths || {}).forEach(([k, v]) => this.playerDeaths.set(Number(k), v));
+    Object.entries(saved.player_aggregates || {}).forEach(([k, v]) => this.playerAggregates.set(Number(k), v));
+    if (saved.player_squat_remainders) {
+      Object.entries(saved.player_squat_remainders).forEach(([k, v]) => this.playerSquatRemainders.set(Number(k), v));
     }
   }
 }
