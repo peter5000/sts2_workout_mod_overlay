@@ -25,6 +25,7 @@ export class DebtLedger {
   private playerDeaths: Map<number, number> = new Map();
   private playerAggregates: Map<number, { accrued: number; pushups: number; squats: number }> = new Map();
   private playerSquatRemainders: Map<number, number> = new Map();
+  private playerNames: Map<number, string> = new Map();
   private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
 
   private jogPenaltyActive: boolean = false;
@@ -68,6 +69,11 @@ export class DebtLedger {
       this.isMultiplayer = Boolean(runData?.is_multiplayer);
       this.playerCount = runData?.player_count || safePlayers.length || 1;
     }
+
+    safePlayers.forEach((p, idx) => {
+      const pIdx = typeof p.index === 'number' ? p.index : idx;
+      if (p.name) this.playerNames.set(pIdx, p.name);
+    });
 
     let commitData: FloorCommitData | null = null;
 
@@ -130,13 +136,15 @@ export class DebtLedger {
         const reps = payload.reps || 0;
         if (payload.exercise === 'pushups') {
           debtDeduction = Math.min(reps, currentDebt);
-          pushupsAdded = reps;
+          pushupsAdded = debtDeduction;
         } else if (payload.exercise === 'squats') {
-          const totalSquats = currentRemainder + reps;
+          const maxSquatsNeeded = Math.max(currentDebt * ratio - currentRemainder, 0);
+          const effectiveSquats = Math.min(reps, maxSquatsNeeded);
+          const totalSquats = currentRemainder + effectiveSquats;
           debtDeduction = Math.min(Math.floor(totalSquats / ratio), currentDebt);
           const newRemainder = totalSquats % ratio;
           this.playerSquatRemainders.set(idx, newRemainder);
-          squatsAdded = reps;
+          squatsAdded = effectiveSquats;
         }
         break;
 
@@ -187,11 +195,13 @@ export class DebtLedger {
     const deathsObj: Record<number, number> = {};
     const aggsObj: Record<number, { accrued: number; pushups: number; squats: number }> = {};
     const remaindersObj: Record<number, number> = {};
+    const namesObj: Record<number, string> = {};
 
     this.playerDebts.forEach((val, key) => (debtsObj[key] = val));
     this.playerDeaths.forEach((val, key) => (deathsObj[key] = val));
     this.playerAggregates.forEach((val, key) => (aggsObj[key] = val));
     this.playerSquatRemainders.forEach((val, key) => (remaindersObj[key] = val));
+    this.playerNames.forEach((val, key) => (namesObj[key] = val));
 
     return {
       run_id: this.runId,
@@ -204,6 +214,7 @@ export class DebtLedger {
       player_deaths: deathsObj,
       player_aggregates: aggsObj,
       player_squat_remainders: remaindersObj,
+      player_names: namesObj,
       run_status: this.runStatus,
       jog_penalty: {
         active: this.jogPenaltyActive,
@@ -240,6 +251,7 @@ export class DebtLedger {
     this.playerDeaths.clear();
     this.playerAggregates.clear();
     this.playerSquatRemainders.clear();
+    this.playerNames.clear();
 
     for (const p of this.players) {
       const idx = typeof p.index === 'number' ? p.index : 0;
@@ -247,6 +259,7 @@ export class DebtLedger {
       this.playerDeaths.set(idx, 0);
       this.playerAggregates.set(idx, { accrued: 0, pushups: 0, squats: 0 });
       this.playerSquatRemainders.set(idx, 0);
+      if (p.name) this.playerNames.set(idx, p.name);
     }
   }
 
@@ -288,8 +301,6 @@ export class DebtLedger {
       total_squats: totalSquats,
       jog_penalty_applied: isDefeat
     });
-
-    this.activeSessionsMap.delete(this.runId);
 
     return {
       type: 'RUN_TERMINATED',
@@ -338,12 +349,16 @@ export class DebtLedger {
     this.playerDeaths.clear();
     this.playerAggregates.clear();
     this.playerSquatRemainders.clear();
+    this.playerNames.clear();
 
     Object.entries(saved.player_debts || {}).forEach(([k, v]) => this.playerDebts.set(Number(k), v));
     Object.entries(saved.player_deaths || {}).forEach(([k, v]) => this.playerDeaths.set(Number(k), v));
     Object.entries(saved.player_aggregates || {}).forEach(([k, v]) => this.playerAggregates.set(Number(k), v));
     if (saved.player_squat_remainders) {
       Object.entries(saved.player_squat_remainders).forEach(([k, v]) => this.playerSquatRemainders.set(Number(k), v));
+    }
+    if (saved.player_names) {
+      Object.entries(saved.player_names).forEach(([k, v]) => this.playerNames.set(Number(k), v));
     }
   }
 }

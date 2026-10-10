@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ActiveSessionStore } from '../shared/types';
+import { ActiveSessionStore, PartyMemberSummary } from '../shared/types';
 
 export interface WorkoutHistoryStore {
   completed_runs: {
@@ -12,6 +12,7 @@ export interface WorkoutHistoryStore {
     total_pushups: number;
     total_squats: number;
     jog_penalty_applied: boolean;
+    party_summary?: PartyMemberSummary[];
   }[];
 }
 

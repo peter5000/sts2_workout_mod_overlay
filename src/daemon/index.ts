@@ -18,7 +18,7 @@ import {
 dotenv.config();
 
 const PORT = parseInt(process.env.PORT || '8765', 10);
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 const defaultSaveDir = path.join(process.cwd(), 'test_saves');
 const saveDir = process.env.STS2_SAVE_DIR || defaultSaveDir;
 

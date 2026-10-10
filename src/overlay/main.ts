@@ -7,6 +7,15 @@ dotenv.config();
 // Disable hardware acceleration for transparent overlay windows to prevent GPU process crashes
 app.disableHardwareAcceleration();
 
+// Ignore SSL certificate errors to allow secure WebSocket & HTTPS tunnels (e.g. ngrok)
+app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('allow-insecure-localhost');
+
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  event.preventDefault();
+  callback(true);
+});
+
 // Enforce Single Instance Lock to prevent process & Alt+Tab multiplication
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
