@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Disable hardware acceleration for transparent overlay windows to prevent GPU process crashes
+app.disableHardwareAcceleration();
+
 // Enforce Single Instance Lock to prevent process & Alt+Tab multiplication
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -13,6 +16,16 @@ if (!gotTheLock) {
 let windowA: BrowserWindow | null = null;
 let windowB: BrowserWindow | null = null;
 let isClickThrough: boolean = false;
+
+function reassertAlwaysOnTop() {
+  if (process.env.ELECTRON_ALWAYS_ON_TOP === 'false') return;
+  [windowA, windowB].forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      win.setAlwaysOnTop(true, 'screen-saver', 1);
+      win.moveTop();
+    }
+  });
+}
 
 function createWindows() {
   const commonWebPreferences = {
@@ -58,13 +71,28 @@ function createWindows() {
   });
   windowB.loadFile(htmlPath, { query: { panel: 'b' } });
 
+  reassertAlwaysOnTop();
+
   windowA.on('closed', () => { windowA = null; });
   windowB.on('closed', () => { windowB = null; });
+
+  windowA.on('blur', () => { reassertAlwaysOnTop(); });
+  windowB.on('blur', () => { reassertAlwaysOnTop(); });
 
   // Register Global Hotkey to toggle Click-Through Mode for both windows (Ctrl+Shift+X)
   globalShortcut.register('CommandOrControl+Shift+X', () => {
     toggleClickThrough();
   });
+
+  // Register Global Hotkey to Force Bring Overlay Windows to Top (Ctrl+Shift+Z)
+  globalShortcut.register('CommandOrControl+Shift+Z', () => {
+    reassertAlwaysOnTop();
+  });
+
+  // Periodic z-order enforcer loop (every 2.5s) to prevent Windows DWM / game fullscreen demotion
+  setInterval(() => {
+    reassertAlwaysOnTop();
+  }, 2500);
 }
 
 function toggleClickThrough(forceState?: boolean) {

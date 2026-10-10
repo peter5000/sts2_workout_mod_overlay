@@ -11,7 +11,7 @@ const WS_URL = 'ws://127.0.0.1:8765';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<ActiveSessionStore | null>(null);
-  const selectedPlayerIdx = 0; // Strictly local player stats
+  const [selectedPlayerIdx, setSelectedPlayerIdx] = useState<number>(0);
   const [repsInput, setRepsInput] = useState<string>('10');
   const [clickThrough, setClickThrough] = useState<boolean>(false);
   const [showStartModal, setShowStartModal] = useState<boolean>(false);
@@ -153,6 +153,7 @@ const App: React.FC = () => {
   const activeDebt = session?.player_debts?.[selectedPlayerIdx] || 0;
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
   const ratio = session?.squat_ratio || 2;
+  const playerIndices = Object.keys(session?.player_debts || {});
 
   const showPanelA = targetPanel === 'a' || targetPanel === 'all';
   const showPanelB = targetPanel === 'b' || targetPanel === 'all';
@@ -180,8 +181,30 @@ const App: React.FC = () => {
       {/* PANEL A: Remainder Resolver Window */}
       {showPanelA && (
         <div style={styles.panel}>
+          {playerIndices.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+              <label style={{ fontSize: 'clamp(10px, 2vh, 12px)', color: '#cbd5e0', fontWeight: 'bold' }}>Active Player:</label>
+              <select
+                value={selectedPlayerIdx}
+                onChange={(e) => setSelectedPlayerIdx(parseInt(e.target.value, 10))}
+                style={styles.select}
+              >
+                {playerIndices.map((idxStr) => {
+                  const pIdx = parseInt(idxStr, 10);
+                  return (
+                    <option key={pIdx} value={pIdx}>
+                      Player {pIdx + 1} {pIdx === 0 ? '(Host)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           <div style={styles.counterBox}>
-            <div style={styles.counterLabel}>REMAINING WORKOUT COUNT (YOURS)</div>
+            <div style={styles.counterLabel}>
+              REMAINING WORKOUT COUNT {playerIndices.length > 1 ? `(PLAYER ${selectedPlayerIdx + 1})` : '(YOURS)'}
+            </div>
             <div style={{ ...styles.counterValue, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
               {activeDebt} <span style={styles.unitText}>wc</span>
             </div>
@@ -218,6 +241,26 @@ const App: React.FC = () => {
       {/* PANEL B: Aggregate Ledger Window */}
       {showPanelB && (
         <div style={styles.panel}>
+          {playerIndices.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+              <label style={{ fontSize: 'clamp(10px, 2vh, 12px)', color: '#cbd5e0', fontWeight: 'bold' }}>Active Player:</label>
+              <select
+                value={selectedPlayerIdx}
+                onChange={(e) => setSelectedPlayerIdx(parseInt(e.target.value, 10))}
+                style={styles.select}
+              >
+                {playerIndices.map((idxStr) => {
+                  const pIdx = parseInt(idxStr, 10);
+                  return (
+                    <option key={pIdx} value={pIdx}>
+                      Player {pIdx + 1} {pIdx === 0 ? '(Host)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           <div style={styles.statGrid}>
             <div style={styles.statCard}>
               <div style={styles.statLabel}>Push-ups</div>
@@ -228,7 +271,7 @@ const App: React.FC = () => {
               <div style={styles.statVal}>{activeAggs.squats}</div>
             </div>
             <div style={styles.statCard}>
-              <div style={styles.statLabel}>Remaining workout count</div>
+              <div style={styles.statLabel}>Remaining wc</div>
               <div style={{ ...styles.statVal, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>{activeDebt} wc</div>
             </div>
           </div>
@@ -442,6 +485,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#fff',
     fontSize: 'clamp(10px, 2.2vh, 13px)'
   },
+  select: {
+    padding: '2px 6px',
+    borderRadius: '4px',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    background: 'rgba(0, 0, 0, 0.5)',
+    color: '#63b3ed',
+    fontWeight: 'bold',
+    fontSize: 'clamp(10px, 2vh, 12px)',
+    cursor: 'pointer'
+  },
   btnPrimary: {
     flex: 1,
     display: 'flex',
@@ -504,12 +557,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px'
   },
   statLabel: {
-    fontSize: 'clamp(8px, 1.8vh, 10px)',
+    fontSize: 'clamp(10px, 2.2vh, 14px)',
     color: '#a0aec0',
-    textAlign: 'center'
+    textAlign: 'center',
+    fontWeight: 'bold'
   },
   statVal: {
-    fontSize: 'clamp(12px, 3.2vh, 20px)',
+    fontSize: 'clamp(16px, 5vh, 32px)',
     fontWeight: 'bold',
     color: '#edf2f7'
   },
@@ -518,13 +572,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    fontSize: 'clamp(10px, 2.2vh, 14px)'
+    fontSize: 'clamp(11px, 2.5vh, 15px)'
   },
   ratioToggleBtn: {
     background: 'transparent',
     border: 'none',
     color: '#cbd5e0',
-    fontSize: 'clamp(10px, 2.2vh, 13px)',
+    fontSize: 'clamp(11px, 2.5vh, 15px)',
     fontWeight: 'bold',
     cursor: 'pointer',
     padding: 0

@@ -16,6 +16,7 @@ export interface ActiveSessionStore {
   player_debts: Record<number, number>;
   player_deaths: Record<number, number>;
   player_aggregates: Record<number, { accrued: number; pushups: number; squats: number }>;
+  player_squat_remainders?: Record<number, number>;
   run_status: 'ACTIVE' | 'VICTORY' | 'DEFEAT';
   jog_penalty: {
     active: boolean;

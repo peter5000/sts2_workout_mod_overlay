@@ -92,7 +92,15 @@ app.post('/api/v1/session/start', (req, res) => {
   if (typeof payload.squat_ratio === 'number') {
     ledger.setSquatRatio(payload.squat_ratio);
   }
-  res.json({ success: true, state: ledger.getFullState() });
+
+  const currentState = ledger.getFullState();
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'STATE_UPDATE', timestamp: Date.now(), data: currentState }));
+    }
+  });
+
+  res.json({ success: true, state: currentState });
 });
 
 // 3. POST /api/v1/workout/resolve - Submits custom rep logging or bulk clearance
@@ -121,6 +129,15 @@ app.post('/api/v1/config/ratio', (req, res) => {
   const payload = req.body as UpdateRatioPayload;
   if (typeof payload.squat_ratio === 'number' && payload.squat_ratio >= 1) {
     ledger.setSquatRatio(payload.squat_ratio);
+
+    // Broadcast updated session state to all HUD overlays
+    const currentState = ledger.getFullState();
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'STATE_UPDATE', timestamp: Date.now(), data: currentState }));
+      }
+    });
+
     res.json({ success: true, squat_ratio: ledger.getSquatRatio() });
   } else {
     res.status(400).json({ error: 'Invalid squat_ratio parameter' });
