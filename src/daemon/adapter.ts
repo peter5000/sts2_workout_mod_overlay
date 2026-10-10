@@ -1,5 +1,39 @@
 import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetric } from '../shared/types';
 
+export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj?: any): string {
+  // 1. Check ID from raw player object (steam_id, account_id, id, net_id, player_id)
+  const candidateIds: (string | number)[] = [
+    rawPlayerObj?.steam_id,
+    rawPlayerObj?.account_id,
+    rawPlayerObj?.id,
+    rawPlayerObj?.net_id,
+    rawPlayerObj?.player_id
+  ].filter((v) => v !== undefined && v !== null && v !== '');
+
+  for (const idVal of candidateIds) {
+    const strId = String(idVal).trim();
+    const envById = process.env[`PLAYER_ID_${strId}`] || process.env[`PLAYER_NAME_${strId}`];
+    if (envById && envById.trim().length > 0) {
+      return envById.trim();
+    }
+  }
+
+  // 2. Check env by index: PLAYER_NAME_<idx>
+  const envKey = `PLAYER_NAME_${idx}`;
+  const envName = process.env[envKey];
+  if (envName && envName.trim().length > 0) {
+    return envName.trim();
+  }
+
+  // 3. Check save data name if present and custom (not generic default)
+  if (rawName && rawName.trim().length > 0 && !rawName.startsWith('Player ') && rawName !== 'UNKNOWN') {
+    return rawName.trim();
+  }
+
+  // 4. Default fallback by index
+  return `Player ${idx + 1}`;
+}
+
 /**
  * Normalizes raw save data from either:
  * 1) Standard RawRunSaveData (e.g., sample JSON payloads)
@@ -11,7 +45,7 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
       run_id: `run_${Date.now()}`,
       is_multiplayer: false,
       player_count: 1,
-      players: [{ index: 0, name: 'Player 1', character: 'UNKNOWN' }],
+      players: [{ index: 0, name: getDefaultPlayerName(0), character: 'UNKNOWN' }],
       floors: [],
       run_status: 'ACTIVE'
     };
@@ -23,11 +57,14 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
       run_id: raw.run_id,
       is_multiplayer: Boolean(raw.is_multiplayer),
       player_count: typeof raw.player_count === 'number' ? raw.player_count : raw.players.length,
-      players: raw.players.map((p: any, idx: number) => ({
-        index: typeof p.index === 'number' ? p.index : idx,
-        name: p.name || `Player ${idx + 1}`,
-        character: p.character || 'UNKNOWN'
-      })),
+      players: raw.players.map((p: any, idx: number) => {
+        const pIdx = typeof p.index === 'number' ? p.index : idx;
+        return {
+          index: pIdx,
+          name: getDefaultPlayerName(pIdx, p.name, p),
+          character: p.character || 'UNKNOWN'
+        };
+      }),
       floors: raw.floors,
       run_status: raw.run_status === 'VICTORY' || raw.run_status === 'DEFEAT' ? raw.run_status : 'ACTIVE'
     };
@@ -51,11 +88,11 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
         const charName = (p.character_id || p.character || 'UNKNOWN').replace(/^CHARACTER\./, '');
         return {
           index: playerIndex,
-          name: p.name || charName || `Player ${idx + 1}`,
+          name: getDefaultPlayerName(playerIndex, p.name, p),
           character: charName
         };
       })
-    : [{ index: 0, name: 'Player 1', character: 'UNKNOWN' }];
+    : [{ index: 0, name: getDefaultPlayerName(0), character: 'UNKNOWN' }];
 
   let run_status: 'ACTIVE' | 'VICTORY' | 'DEFEAT' = 'ACTIVE';
   if (raw.run_status === 'VICTORY' || raw.win === true) {
@@ -133,7 +170,13 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
             stat?.died_this_floor ||
             (maxHp > 0 && hp_end <= 0 && (stat?.damage_taken || 0) > 0)
           );
-          const death_turn = died_this_floor ? total_combat_turns : null;
+          const death_turn = died_this_floor
+            ? (typeof stat?.death_turn === 'number' ? stat.death_turn
+              : typeof stat?.turn_died === 'number' ? stat.turn_died
+              : typeof stat?.turn_of_death === 'number' ? stat.turn_of_death
+              : typeof stat?.turns_survived === 'number' ? stat.turns_survived
+              : total_combat_turns)
+            : null;
 
           return {
             player_index: p.index,

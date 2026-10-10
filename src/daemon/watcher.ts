@@ -29,17 +29,15 @@ export class SaveWatcher {
 
     this.watcher = chokidar.watch(this.targetDir, {
       persistent: true,
-      ignoreInitial: false,
+      ignoreInitial: true,
       awaitWriteFinish: false,
-      depth: 2
+      depth: 1
     });
 
     const triggerFileCheck = (filePath: string) => {
       const fileName = path.basename(filePath);
       const isCurrentSave = fileName === 'current_run.save' || fileName === 'current_run_mp.save';
-      const isHistoryRun = (filePath.includes('history') || filePath.includes('saves')) && (fileName.endsWith('.run') || fileName.endsWith('.save')) && fileName !== 'prefs.save' && fileName !== 'progress.save';
-
-      if (isCurrentSave || isHistoryRun) {
+      if (isCurrentSave) {
         this.scheduleDebouncedRead(filePath);
       }
     };
@@ -47,14 +45,50 @@ export class SaveWatcher {
     const handleUnlink = (filePath: string) => {
       const fileName = path.basename(filePath);
       if (fileName === 'current_run.save' || fileName === 'current_run_mp.save') {
-        console.log(`[SAVE WATCHER] current_run.save removed. Checking history directory for completed run...`);
-        this.checkLatestHistoryRun();
+        console.log(`[SAVE WATCHER] Active save removed (${fileName}). Checking history directory for completed run...`);
+        setTimeout(() => {
+          this.checkLatestHistoryRun();
+        }, 300);
       }
     };
 
     this.watcher.on('add', triggerFileCheck);
     this.watcher.on('change', triggerFileCheck);
     this.watcher.on('unlink', handleUnlink);
+
+    // Initial targeted scan for newest active save file
+    this.scanInitialActiveSave();
+  }
+
+  private scanInitialActiveSave(): void {
+    try {
+      const spSave = path.join(this.targetDir, 'current_run.save');
+      const mpSave = path.join(this.targetDir, 'current_run_mp.save');
+
+      const spExists = fs.existsSync(spSave);
+      const mpExists = fs.existsSync(mpSave);
+
+      let targetSavePath: string | null = null;
+
+      if (spExists && mpExists) {
+        const spMtime = fs.statSync(spSave).mtimeMs;
+        const mpMtime = fs.statSync(mpSave).mtimeMs;
+        targetSavePath = mpMtime >= spMtime ? mpSave : spSave;
+      } else if (mpExists) {
+        targetSavePath = mpSave;
+      } else if (spExists) {
+        targetSavePath = spSave;
+      }
+
+      if (targetSavePath) {
+        console.log(`[SAVE WATCHER] Initial active save detected: ${targetSavePath}`);
+        this.scheduleDebouncedRead(targetSavePath);
+      } else {
+        console.log(`[SAVE WATCHER] No active current_run.save or current_run_mp.save found on startup.`);
+      }
+    } catch (err) {
+      console.error(`[SAVE WATCHER ERROR] Initial save scan failed:`, err);
+    }
   }
 
   private checkLatestHistoryRun(): void {

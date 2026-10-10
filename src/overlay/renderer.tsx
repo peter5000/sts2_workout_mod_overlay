@@ -6,8 +6,43 @@ import {
   WebSocketMessage
 } from '../shared/types';
 
-const API_BASE = 'http://127.0.0.1:8765';
-const WS_URL = 'ws://127.0.0.1:8765';
+const getInitialDaemonHost = (): string => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const hostFromUrl = urlParams.get('host') || urlParams.get('daemon');
+  if (hostFromUrl) return hostFromUrl.trim();
+  const stored = localStorage.getItem('sts2_daemon_host');
+  if (stored && stored.trim().length > 0) return stored.trim();
+  if (process.env.DAEMON_HOST && process.env.DAEMON_HOST.trim().length > 0) return process.env.DAEMON_HOST.trim();
+  return '127.0.0.1';
+};
+
+const getApiAndWsUrls = (hostInput: string): { apiBase: string; wsUrl: string } => {
+  const trimmed = hostInput.trim();
+  if (!trimmed) {
+    return { apiBase: 'http://127.0.0.1:8765', wsUrl: 'ws://127.0.0.1:8765' };
+  }
+
+  // Handle full HTTP/HTTPS URLs (e.g. https://xxxx.ngrok-free.app)
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    const apiBase = trimmed.replace(/\/+$/, '');
+    const wsUrl = apiBase.replace(/^http/, 'ws');
+    return { apiBase, wsUrl };
+  }
+
+  // Handle ngrok/tunnel domains without protocol prefix (e.g. xxxx.ngrok-free.app)
+  if (trimmed.includes('.ngrok') || trimmed.includes('.loca.lt') || trimmed.includes('.trycloudflare.com')) {
+    const apiBase = `https://${trimmed}`;
+    const wsUrl = `wss://${trimmed}`;
+    return { apiBase, wsUrl };
+  }
+
+  // Default IP/Host with port 8765
+  const hostWithPort = trimmed.includes(':') ? trimmed : `${trimmed}:8765`;
+  return {
+    apiBase: `http://${hostWithPort}`,
+    wsUrl: `ws://${hostWithPort}`
+  };
+};
 
 const App: React.FC = () => {
   const [session, setSession] = useState<ActiveSessionStore | null>(null);
@@ -18,6 +53,12 @@ const App: React.FC = () => {
   const [startRatio, setStartRatio] = useState<number>(2);
   const [countdownText, setCountdownText] = useState<string>('24:00:00');
 
+  // Dynamic Host Connection State
+  const [daemonHost, setDaemonHost] = useState<string>(getInitialDaemonHost());
+  const [showHostModal, setShowHostModal] = useState<boolean>(false);
+  const [tempHostInput, setTempHostInput] = useState<string>(daemonHost);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+
   // Collapsible Squat Ratio section state
   const [ratioCollapsed, setRatioCollapsed] = useState<boolean>(false);
 
@@ -25,19 +66,32 @@ const App: React.FC = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const targetPanel = urlParams.get('panel') || 'all';
 
+  const { apiBase, wsUrl } = getApiAndWsUrls(daemonHost);
+
+  const customHeaders = {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true'
+  };
+
   // Fetch initial state snapshot from REST API
   const fetchState = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/session/state`);
+      const res = await fetch(`${apiBase}/api/v1/session/state`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
       if (res.ok) {
         const data: ActiveSessionStore = await res.json();
         setSession(data);
+        setIsConnected(true);
         if (data.squat_ratio) {
           setStartRatio(data.squat_ratio);
         }
+      } else {
+        setIsConnected(false);
       }
     } catch (e) {
-      console.warn('Daemon server offline or starting up...');
+      setIsConnected(false);
+      console.warn('Daemon server offline or connecting...');
     }
   };
 
@@ -46,8 +100,14 @@ const App: React.FC = () => {
 
     // Setup WebSocket listener for real-time events
     let ws: WebSocket | null = null;
+    let isCancelled = false;
+
     const connectWS = () => {
-      ws = new WebSocket(WS_URL);
+      if (isCancelled) return;
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        setIsConnected(true);
+      };
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
@@ -67,7 +127,13 @@ const App: React.FC = () => {
         }
       };
       ws.onclose = () => {
-        setTimeout(connectWS, 2000);
+        setIsConnected(false);
+        if (!isCancelled) {
+          setTimeout(connectWS, 2000);
+        }
+      };
+      ws.onerror = () => {
+        setIsConnected(false);
       };
     };
 
@@ -79,9 +145,10 @@ const App: React.FC = () => {
     });
 
     return () => {
+      isCancelled = true;
       if (ws) ws.close();
     };
-  }, []);
+  }, [daemonHost]);
 
   // Live countdown timer ticker for 24h Jog Penalty
   useEffect(() => {
@@ -104,9 +171,9 @@ const App: React.FC = () => {
   const handleResolveReps = async (actionType: 'CUSTOM_ENTRY' | 'ALL_PUSHUPS' | 'ALL_SQUATS', exercise?: 'pushups' | 'squats') => {
     const val = parseInt(repsInput, 10) || 0;
     try {
-      await fetch(`${API_BASE}/api/v1/workout/resolve`, {
+      await fetch(`${apiBase}/api/v1/workout/resolve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: customHeaders,
         body: JSON.stringify({
           player_index: selectedPlayerIdx,
           action_type: actionType,
@@ -124,9 +191,9 @@ const App: React.FC = () => {
   const handleUpdateRatio = async (newRatio: number) => {
     if (newRatio < 1) return;
     try {
-      await fetch(`${API_BASE}/api/v1/config/ratio`, {
+      await fetch(`${apiBase}/api/v1/config/ratio`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: customHeaders,
         body: JSON.stringify({ squat_ratio: newRatio })
       });
       fetchState();
@@ -137,9 +204,9 @@ const App: React.FC = () => {
 
   const handleConfirmStart = async () => {
     try {
-      await fetch(`${API_BASE}/api/v1/session/start`, {
+      await fetch(`${apiBase}/api/v1/session/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: customHeaders,
         body: JSON.stringify({ opt_in: true, squat_ratio: startRatio })
       });
       setShowStartModal(false);
@@ -155,27 +222,49 @@ const App: React.FC = () => {
   const ratio = session?.squat_ratio || 2;
   const playerIndices = Object.keys(session?.player_debts || {});
 
+  const getPlayerName = (idx: number): string => {
+    if (session?.player_names?.[idx]) {
+      return session.player_names[idx];
+    }
+    return `Player ${idx + 1}`;
+  };
+
   const showPanelA = targetPanel === 'a' || targetPanel === 'all';
   const showPanelB = targetPanel === 'b' || targetPanel === 'all';
 
   return (
     <div style={styles.container}>
-      {/* Header Bar with Click Through (Ctrl+Shift+X) actual command text */}
+      {/* Header Bar with Click Through (Ctrl+Shift+X) & Host IP Switcher */}
       <div style={styles.header}>
         <div style={styles.headerTitle}>
           {targetPanel === 'a' && '🏋️ Panel A: Debt Resolver'}
           {targetPanel === 'b' && '📊 Panel B: Run Ledger'}
           {targetPanel === 'all' && '🏋️ StS2 Workout HUD'}
         </div>
-        <button
-          onClick={() => ipcRenderer.send('set-click-through', !clickThrough)}
-          style={{
-            ...styles.badge,
-            backgroundColor: clickThrough ? 'rgba(229, 62, 62, 0.85)' : 'rgba(49, 151, 149, 0.85)'
-          }}
-        >
-          {clickThrough ? 'Click through ON (Ctrl+Shift+X)' : 'Click through OFF (Ctrl+Shift+X)'}
-        </button>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <button
+            onClick={() => {
+              setTempHostInput(daemonHost);
+              setShowHostModal(true);
+            }}
+            title="Click to configure Host IP for Multiplayer"
+            style={{
+              ...styles.badge,
+              backgroundColor: isConnected ? 'rgba(56, 161, 105, 0.85)' : 'rgba(229, 62, 62, 0.85)'
+            }}
+          >
+            {isConnected ? `🌐 ${daemonHost}` : `⚠️ Offline (${daemonHost})`}
+          </button>
+          <button
+            onClick={() => ipcRenderer.send('set-click-through', !clickThrough)}
+            style={{
+              ...styles.badge,
+              backgroundColor: clickThrough ? 'rgba(229, 62, 62, 0.85)' : 'rgba(49, 151, 149, 0.85)'
+            }}
+          >
+            {clickThrough ? 'Click through ON (Ctrl+Shift+X)' : 'Click through OFF (Ctrl+Shift+X)'}
+          </button>
+        </div>
       </div>
 
       {/* PANEL A: Remainder Resolver Window */}
@@ -193,7 +282,7 @@ const App: React.FC = () => {
                   const pIdx = parseInt(idxStr, 10);
                   return (
                     <option key={pIdx} value={pIdx}>
-                      Player {pIdx + 1} {pIdx === 0 ? '(Host)' : ''}
+                      {getPlayerName(pIdx)} {pIdx === 0 ? '(Host)' : ''}
                     </option>
                   );
                 })}
@@ -203,7 +292,7 @@ const App: React.FC = () => {
 
           <div style={styles.counterBox}>
             <div style={styles.counterLabel}>
-              REMAINING WORKOUT COUNT {playerIndices.length > 1 ? `(PLAYER ${selectedPlayerIdx + 1})` : '(YOURS)'}
+              REMAINING WORKOUT COUNT {playerIndices.length > 1 ? `(${getPlayerName(selectedPlayerIdx).toUpperCase()})` : '(YOURS)'}
             </div>
             <div style={{ ...styles.counterValue, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
               {activeDebt} <span style={styles.unitText}>wc</span>
@@ -253,7 +342,7 @@ const App: React.FC = () => {
                   const pIdx = parseInt(idxStr, 10);
                   return (
                     <option key={pIdx} value={pIdx}>
-                      Player {pIdx + 1} {pIdx === 0 ? '(Host)' : ''}
+                      {getPlayerName(pIdx)} {pIdx === 0 ? '(Host)' : ''}
                     </option>
                   );
                 })}
@@ -370,7 +459,7 @@ const App: React.FC = () => {
                       const deaths = session.player_deaths?.[pIdx] || 0;
                       return (
                         <tr key={pIdx}>
-                          <td style={styles.td}>Player {pIdx + 1}</td>
+                          <td style={styles.td}>{getPlayerName(pIdx)} {pIdx === 0 ? '(Host)' : ''}</td>
                           <td style={{ ...styles.td, color: debt > 0 ? '#fc8181' : '#68d391', fontWeight: 'bold' }}>
                             {debt} wc
                           </td>
@@ -387,6 +476,41 @@ const App: React.FC = () => {
             <button onClick={() => setSession({ ...session!, run_status: 'ACTIVE' })} style={styles.btnPrimary}>
               Dismiss Summary
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Daemon Host IP Configuration */}
+      {showHostModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <h3 style={{ color: '#63b3ed', fontSize: 'clamp(13px, 2.5vh, 16px)', margin: '0 0 8px 0' }}>🌐 DAEMON HOST SETTINGS</h3>
+            <p style={{ margin: '4px 0 10px 0', fontSize: 'clamp(10px, 1.8vh, 12px)', color: '#cbd5e0' }}>
+              Enter Host PC IP Address (e.g. 192.168.1.X or Tailscale IP). Leave as 127.0.0.1 if daemon is local:
+            </p>
+            <input
+              type="text"
+              value={tempHostInput}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTempHostInput(e.target.value)}
+              placeholder="127.0.0.1 or 192.168.1.X"
+              style={{ ...styles.input, width: '90%', marginBottom: '12px', textAlign: 'center' }}
+            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  const cleaned = tempHostInput.trim() || '127.0.0.1';
+                  setDaemonHost(cleaned);
+                  localStorage.setItem('sts2_daemon_host', cleaned);
+                  setShowHostModal(false);
+                }}
+                style={styles.btnSuccess}
+              >
+                Save & Connect
+              </button>
+              <button onClick={() => setShowHostModal(false)} style={styles.btnPrimary}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
