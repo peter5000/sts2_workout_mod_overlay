@@ -1,13 +1,8 @@
-```markdown
-# Slay the Spire 2: Workout Mode Overlay (v1.1.0 Specification)
-## Architecture, Data Flow, and Overlay Specification
+# Slay the Spire 2: Workout Mode Overlay (v1.2.0 Architecture Specification)
 
 ## 1. System & Game Lifecycle Overview
 
-The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon and HUD running on the Host PC. It automatically monitors the game's file system outputs, derives per-player workout debt after every floor, provides an interactive UI for logging exercise reps, and manages session lifecycle events (run opt-in, parameter configuration, victory recaps, and defeat penalties).
-
-
-```
+The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon and HUD running on the Host PC and guest player PCs. It automatically monitors Slay the Spire 2's native save checkpoints, derives per-player workout debt after every floor, provides an interactive transparent HUD for logging exercise reps, synchronizes multiplayer party sessions across local networks or public tunnels (e.g., ngrok), and manages the full game lifecycle (opt-in modals, dynamic ratio adjustments, victory summaries, and defeat accountability timers).
 
 ```
                   [ STS2 Process Boots / New Run Initialized ]
@@ -15,19 +10,20 @@ The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon
                                        ▼
                   ┌──────────────────────────────────────────┐
                   │    RUN START MODAL (Interactive HUD)     │
-                  │  • "Enable Workout Mode for this run?"   │
-                  │  • Configure Squat Ratio (Default: 2)    │
-                  │  • Future Run Modifiers Hook             │
+                  │  • "Enable Workout Mode for this session?"│
+                  │  • Configure Squat Ratio (Default: R=2)  │
+                  │  • Arms Authoritative Debt Ledger        │
                   └────────────────────┬─────────────────────┘
                                        │ Confirmed
                                        ▼
                   ┌──────────────────────────────────────────┐
                   │             ACTIVE RUN LOOP              │
-                  │  For each floor commit:                  │
-                  │  • Calculate wc per player               │
-                  │  • Update Pending Debt Panel             │
+                  │  For each committed floor:               │
+                  │  • Ingest sequential floor metrics       │
+                  │  • Calculate wc per player: n(2+d) + h   │
+                  │  • Update Remainder Resolver (Panel A)   │
                   │  • Accept Rep Reductions (Freeform/Bulk) │
-                  │  • Update Cumulative Aggregate Ledger    │
+                  │  • Update Cumulative Ledger (Panel B)    │
                   └────────────────────┬─────────────────────┘
                                        │
                     ┌──────────────────┴──────────────────┐
@@ -39,20 +35,19 @@ The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon
    │      VICTORY RECAP SCREEN      │    │       DEFEAT PENALTY SCREEN     │
    │ • "Victory Achieved!"          │    │ • "Defeat - 30-Min Jog Penalty" │
    │ • Full Session Exercise Totals │    │ • 24-Hour Countdown Timer       │
-   │ • Per-Player Performance Stats │    │ • Outstanding Debt Breakdown    │
-   │   (Solo or Party Leaderboard)  │    │ • Full Session Exercise Totals  │
+   │ • Party Member Leaderboard     │    │ • Outstanding Debt Breakdown    │
+   │ • Preserves stats in history   │    │ • Preserves stats in history    │
    └────────────────────────────────┘    └─────────────────────────────────┘
-
 ```
-
-
 
 ---
 
 ## 2. Mathematical Model & Attribution Engine
 
 ### 2.1 Per-Player Attribution
-All workout counters, HP losses, turn survivals, and death penalties are tracked **per individual player**. Party totals are never pooled into a collective debt; each player bears responsibility for their own combat performance and choices.
+All workout counters, HP deltas, turn survivals, and death penalties are tracked **per individual player**. Party members do not share a pooled debt; each player bears individual accountability for their own combat performance and choices.
+
+Implementation reference: [`src/daemon/parser.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/parser.ts#L15-L80).
 
 ### 2.2 Floor Calculation Equation
 At the conclusion of each floor $f$, each player $p$ accrues a workout counter value ($wc_p$):
@@ -60,28 +55,43 @@ At the conclusion of each floor $f$, each player $p$ accrues a workout counter v
 $$wc_p = n_p(2 + d_p) + h_p$$
 
 Where:
-* $n_p$: Number of combat turns taken by player $p$.
-  * **Survival:** Total combat turns elapsed if the player survived the encounter.
-  * **Mid-Combat Death:** If player $p$ dies during combat, $n_p$ **freezes** at the exact turn the player died. Subsequent turns taken by surviving allies do not increase $n_p$ for the fallen player.
+* **$n_p$ (Combat Turns Taken):**
+  * **Survival:** Total combat turns elapsed if the player survived the encounter (`total_combat_turns`).
+  * **Mid-Combat Death (Turn Freezing):** If player $p$ dies during combat, $n_p$ freezes at the round of death (`stat.death_turn`, `stat.turn_died`, `stat.turn_of_death`, or `stat.turns_survived`). If unrecorded by the save checkpoint, it safely falls back to `total_combat_turns`. Subsequent turns taken by surviving allies do not penalize the fallen player.
   * **Non-Combat Nodes:** For Events, Campfires, and Shops, $n_p = 0$.
-* $d_p$: Cumulative deaths suffered by player $p$ across the current run up to that point.
-* $h_p$: Net positive HP lost by player $p$ on that floor:
+* **$d_p$ (Cumulative Deaths):** Cumulative deaths suffered by player $p$ up to that floor. Increments by $+1$ upon lethal damage and acts as a multiplier penalty for all subsequent floors.
+* **$h_p$ (Net Positive HP Lost):**
   $$h_p = \max(\text{HP}_{p, \text{start}} - \text{HP}_{p, \text{end}}, 0)$$
-  *(Healing or net HP increases yield $h_p = 0$).*
+  *Healing, relic procs, or net HP increases yield $h_p = 0$.*
 
-### 2.3 Squat Ratio & Debt Invariants
-* **Squat Ratio ($R$):** An integer value representing how many squats equal 1 workout counter.
-  * Defaults to $R = 2$.
-  * Can be increased or decreased (as an integer: 1, 2, 3, 4...) dynamically at any point during the run via the overlay HUD.
-* **Rep Conversions:**
-  * $1\ \text{Push-up} = 1\ wc$
-  * $R\ \text{Squats} = 1\ wc$
-* **Remaining Debt Formula:**
-  $$\text{Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups Completed}_p + \left\lfloor \frac{\text{Squats Completed}_p}{R} \right\rfloor \right)$$
+### 2.3 Sequential Floor HP Tracking
+To accurately calculate $h_p$ across floors with post-combat healing relics, the adapter chains floor entries sequentially:
+* **Floor 1:** Initial HP is established from `stat.current_hp + stat.damage_taken` (or `max_hp`).
+* **Subsequent Floors:** Floor entry HP ($\text{HP}_{\text{start}}$) is derived from the preceding floor's exit HP ($\text{HP}_{\text{end}}$), guaranteeing that heal events and combat damage are accurately isolated.
+
+Implementation reference: [`src/daemon/adapter.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/adapter.ts#L120-L175).
+
+### 2.4 Fractional Squat Remainder Tracking ($R > 1$)
+When Squat Ratio $R > 1$, logging custom squats that do not evenly divide by $R$ stores the fractional remainder in `player_squat_remainders`:
+$$\text{Remainder}_{\text{new}} = (\text{Remainder}_{\text{old}} + \text{Squats}) \bmod R$$
+$$\text{Debt Deducted} = \min\left( \left\lfloor \frac{\text{Remainder}_{\text{old}} + \text{Squats}}{R} \right\rfloor, \text{Debt} \right)$$
+
+*Example with $R = 3$:*
+1. Logging 1 squat: Debt deducted = $0$, remainder = $1$.
+2. Logging 1 more squat: Debt deducted = $0$, remainder = $2$.
+3. Logging 1 more squat: Debt deducted = $1\ wc$, remainder resets to $0$.
+
+Implementation reference: [`src/daemon/ledger.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/ledger.ts#L135-L165).
+
+### 2.5 Capped Custom Rep Logging
+To prevent accidental over-logging from artificially inflating completed rep counts:
+* **Push-ups:** $\text{Push-ups Added} = \min(\text{Reps Input}, \text{Current Debt})$.
+* **Squats:** $\text{Squats Added} = \min(\text{Reps Input}, \max(\text{Current Debt} \times R - \text{Remainder}, 0))$.
+Logging reps when active debt is 0 will not credit surplus push-ups or squats.
 
 ---
 
-## 3. Host PC System Architecture
+## 3. Host & Client System Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -96,283 +106,229 @@ Where:
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
 │  │ Host File System Storage                                               │  │
 │  │ %APPDATA%\SlayTheSpire2\steam<SteamID>\profile1\saves\                │  │
-│  │ Target: current_run_mp.save (or current_run.save)                      │  │
+│  │ Targets: current_run_mp.save (Multiplayer) or current_run.save (Solo) │  │
 │  └───────────┬────────────────────────────────────────────────────────────┘  │
-│              │ OS Event: ReadDirectoryChangesW                               │
+│              │ OS Event: ReadDirectoryChangesW (Depth: 1, ignoreInitial: true)│
 │              ▼                                                               │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ WORKOUT RELAY DAEMON (Out-of-Process Background Worker)                │  │
+│  │ WORKOUT RELAY DAEMON (src/daemon/index.ts)                             │  │
 │  │                                                                        │  │
 │  │   ┌────────────────────────────────┐                                   │  │
-│  │   │ 1. File Observer & Debouncer   │ ◄── 75ms debounce, atomic lock    │  │
-│  │   └───────────────┬────────────────┘     retry loop                    │  │
-│  │                   ▼                                                    │  │
-│  │   ┌────────────────────────────────┐                                   │  │
-│  │   │ 2. Canonical Metrics Extractor │ ◄── Ingests floors[], turn logs,  │  │
-│  │   │                                │     death timestamps, HP swings   │  │
+│  │   │ 1. Save Watcher (watcher.ts)   │ ◄── 75ms debounce, atomic lock    │  │
+│  │   │    Targeted Startup Scan       │     retry, selects newest mtime   │  │
 │  │   └───────────────┬────────────────┘                                   │  │
 │  │                   ▼                                                    │  │
 │  │   ┌────────────────────────────────┐                                   │  │
-│  │   │ 3. Per-Player Debt Ledger      │ ◄── Evaluates wc = n(2+d) + h     │  │
-│  │   │                                │     Applies custom rep reductions │  │
+│  │   │ 2. Save Adapter (adapter.ts)   │ ◄── Godot normalization, env-based│  │
+│  │   │    Metric Extractor            │     name resolution               │  │
 │  │   └───────────────┬────────────────┘                                   │  │
 │  │                   ▼                                                    │  │
 │  │   ┌────────────────────────────────┐                                   │  │
-│  │   │ 4. Local Broadcast Hub         │ (ws://127.0.0.1:8765              │  │
-│  │   │    (WebSocket & REST Engine)   │  [http://127.0.0.1:8765](https://www.google.com/search?q=http://127.0.0.1:8765))           │  │
+│  │   │ 3. Debt Ledger (ledger.ts)     │ ◄── Multi-run session store,      │  │
+│  │   │    Attribution Engine          │     remainder tracking, rep cap   │  │
+│  │   └───────────────┬────────────────┘                                   │  │
+│  │                   ▼                                                    │  │
+│  │   ┌────────────────────────────────┐                                   │  │
+│  │   │ 4. Broadcast Hub (index.ts)    │ ◄── HOST=0.0.0.0:8765             │  │
+│  │   │    (WebSocket & REST Engine)   │     Accepts LAN & ngrok tunnels   │  │
 │  │   └───────────────┬────────────────┘                                   │  │
 │  └───────────────────┼────────────────────────────────────────────────────┘  │
 │                      │                                                       │
-│                      ▼ Bidirectional State Sync (ws://127.0.0.1:8765)         │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ WORKOUT OVERLAY HUD (Local Click-Through Window / Electron / Web)      │  │
-│  │                                                                        │  │
-│  │  ┌──────────────────────────────┐    ┌──────────────────────────────┐  │  │
-│  │  │ PANEL A: REMAINDER RESOLVER  │    │ PANEL B: AGGREGATE LEDGER    │  │  │
-│  │  │ • Unresolved Counters ($wc$) │    │ • Total Push-ups Completed   │  │  │
-│  │  │ • Integer Input Box [   ]    │    │ • Total Squats Completed     │  │  │
-│  │  │ • [Push-ups] [Squats]        │    │ • Total Run Counters Accrued │  │  │
-│  │  │ • [All Push-ups] [All Squats]│    │ • Active Squat Ratio: R=[ 2] │  │  │
-│  │  └──────────────────────────────┘    └──────────────────────────────┘  │  │
-│  │                                                                        │  │
-│  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
-│  │  │ MODAL OVERLAYS (Conditional)                                     │  │  │
-│  │  │ • Run Start: Enable Workout Mode & Confirm Initial Modifiers     │  │  │
-│  │  │ • Game Over: Victory Stats Screen OR Defeat 24h Jog Countdown    │  │  │
-│  │  └──────────────────────────────────────────────────────────────────┘  │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
+│                      ├──────────────────────────┐                            │
+│                      ▼ (Local ws://127.0.0.1)   ▼ (Remote wss://ngrok-tunnel)│
+│  ┌─────────────────────────────────────┐  ┌───────────────────────────────┐  │
+│  │ HOST OVERLAY HUD                    │  │ GUEST OVERLAY HUD (Matthew)   │  │
+│  │ (Electron / src/overlay/main.ts)    │  │ (Electron / Client PC)        │  │
+│  │ • Panel A: Remainder Resolver       │  │ • Panel A: Remainder Resolver │  │
+│  │ • Panel B: Run Ledger               │  │ • Panel B: Run Ledger         │  │
+│  │ • Direct Window Z-Order Watchdog    │  │ • Dynamic Host IP/Tunnel Modal│  │
+│  └─────────────────────────────────────┘  └───────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────┘
-
 ```
 
 ---
 
-## 4. UI/UX Overlay Specifications
+## 4. Subsystem Specifications & Code References
 
-The overlay interface consists of two persistent status panels and two lifecycle modals.
+### 4.1 Save Watcher & Active File Priority
+* **File Observer (`src/daemon/watcher.ts`):** Listens to `%APPDATA%\SlayTheSpire2\steam\<SteamID>\profile1\saves\`.
+* **Startup Active File Priority:** Configured with `depth: 1` and `ignoreInitial: true` to prevent historical completed runs in `history/*.run` from triggering false defeat states.
+* **Targeted Initial Scan:** On startup, `scanInitialActiveSave()` inspects both `current_run_mp.save` and `current_run.save`, selecting the active run with the newest modification timestamp (`mtimeMs`).
+* **Run Termination Trigger:** When `current_run_mp.save` is deleted upon victory or death (`unlink`), the watcher queries `history/` after a 300ms delay to extract final run outcome data.
 
-### 4.1 Panel A: Remainder Resolver (Debt Management)
-* **Target Display:** Active player selector (or tabbed views for Player 1, Player 2 in multiplayer).
-* **Unresolved Counters Display:** Prominently renders current unpaid counters ($wc$).
-* **Freeform Input Box:** An `<input type="number" min="1" step="1">` field accepting custom integers.
-* **Resolution Action Buttons:**
-  1. **`Log Push-ups`:** Takes the integer $k$ from the input box. Deducts $k$ from unresolved counters and credits $k$ push-ups to the aggregate ledger.
-  2. **`Log Squats`:** Takes the integer $k$ from the input box. Deducts $\lfloor k / R \rfloor$ from unresolved counters and credits $k$ squats to the aggregate ledger.
-  3. **`All with Push-ups`:** Automatically calculates total reps required to clear the current debt entirely with push-ups ($\text{Reps} = \text{Debt}$), zeros out the debt, and credits the aggregate ledger.
-  4. **`All with Squats`:** Automatically calculates total reps required to clear current debt entirely with squats ($\text{Reps} = \text{Debt} \times R$), zeros out the debt, and credits the aggregate ledger.
+Implementation reference: [`src/daemon/watcher.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/watcher.ts#L20-L95).
 
-### 4.2 Panel B: Aggregate Ledger (Run Totals)
-* **Lifetime Rep Tracker:**
-  * Total Push-ups completed this run.
-  * Total Squats completed this run.
-  * Cumulative workout counters ($wc$) accrued across all completed floors.
-* **Squat Ratio Controller:**
-  * Inline stepper `[ - ] R = 2 [ + ]` allowing players to adjust the squat-to-counter ratio during gameplay.
-* **Multiplayer View:** Shows a consolidated summary table across all connected players.
+### 4.2 Native Godot Save Normalization
+* **Format Ingestion (`src/daemon/adapter.ts`):** Ingests Godot 4.5+ dictionary format from StS2 saves, extracting seed, start time, game mode, player character IDs, and `map_point_history`.
+* **Room Type Normalization:** Maps native room strings (`weak_monster`, `normal`, `elite`, `boss`, `rest_site`, `merchant`) to canonical types (`monster`, `elite`, `boss`, `campfire`, `shop`, `event`).
+* **Player Name Resolution:** Evaluates player display names from environment variables (`PLAYER_ID_<SteamID>`, `PLAYER_NAME_<idx>`), save file names, or generic fallbacks (`Player 1`, `Player 2`). Personal Steam IDs are omitted from code and git commits.
 
-### 4.3 Modal 1: Game Start Prompt
-* **Trigger:** The daemon detects that a new run save has initialized at Floor 0/1.
-* **Contents:**
-  * **Opt-In Switch:** *"Enable Workout Mode for this session?"*
-  * **Squat Ratio Setup:** Input selector for starting squat ratio (Default: 2).
-  * **Extensibility Hook:** Placeholder slot for future run modifiers (e.g., Burpee Boss Modifiers, Elite Double Multipliers).
-  * **Confirmation Button:** Dismisses the modal and arms the debt engine.
+Implementation reference: [`src/daemon/adapter.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/adapter.ts#L1-L100).
 
-### 4.4 Modal 2: Run Outcome Screen
-* **Trigger:** Save file archives into `history/*.run` or marks terminal run status.
-* **Branch A: Victory:**
-  * Banner: *"Victory Achieved!"*
-  * Summary table showing every player's final stats: Floors cleared, total damage sustained, total turns fought, push-ups done, squats done, and remaining unpaid counters.
-* **Branch B: Defeat:**
-  * Banner: *"Run Defeated - 30-Minute Jog Mandated"*
-  * **24-Hour Accountability Countdown:** Live ticking timer (`23:59:59`) showing time remaining to fulfill the jog penalty.
-  * Penalty status for each player (highlighting who died and when).
-  * Option to export or save the workout summary.
+### 4.3 Multi-Run Session Persistence & History Ledger
+* **Active Sessions Store (`src/daemon/persistence.ts`):** `ActiveSessionsMapStore` saves active runs by `run_id` in `active_session.json`. Players can switch between Single-Player (`current_run.save`) and Multiplayer (`current_run_mp.save`) without losing accumulated debt, reps, or remainders.
+* **Preservation on Termination:** When a run finishes (`VICTORY` or `DEFEAT`), the ledger maintains completed session stats in memory and appends a permanent record with per-player `party_summary` breakdowns to `workout_history.json`.
 
----
+Implementation reference: [`src/daemon/persistence.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/persistence.ts#L20-L90) and [`src/daemon/ledger.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/ledger.ts#L270-L315).
 
-## 5. Subsystem Implementation Details
+### 4.4 Multiplayer Relay & Remote Tunneling
+* **Daemon Binding (`src/daemon/index.ts`):** Binds to `0.0.0.0:8765`, enabling remote connections across local Wi-Fi, Tailscale VPNs, or public ngrok tunnels.
+* **In-Overlay Host IP & Tunnel Switcher (`src/overlay/renderer.tsx`):**
+  * Displays a live status badge (`🌐 <host>` or `⚠️ Offline`) in the HUD header.
+  * Clicking the badge opens the Host Configuration Modal to enter host IPs (e.g., `10.0.0.238`) or ngrok URLs (e.g., `abc123xyz.ngrok-free.app`).
+  * Persists custom host addresses in `localStorage` across restarts.
+* **Protocol & Tunnel Normalization:** Automatically routes `http/ws` for IP addresses and `https/wss` for ngrok/tunnel domains.
+* **Chromium SSL & Ngrok Warning Bypass:**
+  * In [`src/overlay/main.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/overlay/main.ts#L10-L20), `app.commandLine.appendSwitch('ignore-certificate-errors')` and `certificate-error` bypass handlers prevent Chromium `net_error -100` SSL handshake aborts.
+  * In [`src/overlay/renderer.tsx`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/overlay/renderer.tsx#L70-L80), all REST requests include `'ngrok-skip-browser-warning': 'true'` headers to bypass free-tier ngrok landing pages.
 
-### Subsystem 1: File Observer & Ingestion
-* Listens to the save directory via `ReadDirectoryChangesW`.
-* Enforces a 75ms debounce delay upon detecting file write triggers.
-* Employs an exponential backoff loop catching file locks (`EBUSY` / `PermissionError`):
-  * Attempt 1: 25ms delay
-  * Attempt 2: 50ms delay
-  * Attempt 3: 100ms delay
-  * Attempt 4: 200ms delay
-* Computes an SHA-256 digest of the read payload. Discards duplicate events where data content has not changed.
+### 4.5 Dual Window Management & DWM Pinning
+* **Dual Independent Windows (`src/overlay/main.ts`):**
+  * **Panel A (Window A):** Debt Resolver (`?panel=a`, width: 380, height: 320).
+  * **Panel B (Window B):** Run Ledger (`?panel=b`, width: 380, height: 220).
+* **Z-Order Protection:** Configured with `setAlwaysOnTop(true, 'screen-saver', 1)` and a 2.5s watchdog timer to prevent Windows Desktop Window Manager (DWM) or DirectX fullscreen games from demoting HUD visibility.
+* **Taskbar & Alt+Tab Optimization:** `skipTaskbar: true` and single-instance locks prevent taskbar crowding and duplicate processes.
+* **Global Hotkeys:**
+  * `Ctrl+Shift+X`: Toggles mouse click-through mode for all overlay panels.
+  * `Ctrl+Shift+Z`: Forces overlay windows to frontmost z-order position.
 
-### Subsystem 2: Metric Extraction & History Normalizer
-* **Floor Step Parsing:** Monitors `floors: Floor[]` array length. When `length` increases, parses the newly appended floor object.
-* **Turn Freezing Logic:**
-  * For surviving players: $n_p = \text{floor.combat\_stats.total\_turns}$.
-  * For players dying mid-combat: The parser inspects the combat action timeline or death event record within the floor metadata to extract `player[p].death_turn`. Assigns $n_p = \text{death\_turn}$.
-* **Health Delta:** Evaluates $h_p = \max(\text{hp\_before} - \text{hp\_after}, 0)$ per player.
-* **Death Count:** Increments $d_p$ if a player suffered lethal damage on that floor.
-
-### Subsystem 3: Local Server & State Ledger
-* Maintains the authoritative in-memory workout ledger.
-* Persists session data locally (`workout_session_current.json`) so unexpected client crashes or app reloads do not wipe active workout debt.
-* Exposes WebSocket endpoint (`ws://127.0.0.1:8765`) and REST endpoints:
-  * `POST /api/v1/session/start`: Submits opt-in confirmation and initial squat ratio.
-  * `POST /api/v1/workout/resolve`: Submits custom rep logging or bulk clearance actions.
-  * `POST /api/v1/config/ratio`: Updates the current squat ratio $R$.
-  * `GET /api/v1/session/state`: Returns the full state payload.
+Implementation reference: [`src/overlay/main.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/overlay/main.ts#L30-L115).
 
 ---
 
-## 6. API Data Contracts
+## 5. Overlay UI/UX Components
 
-### 6.1 Run Start Event (`WebSocket Push`)
-Pushed when a new game run is detected:
+### 5.1 Panel A: Remainder Resolver (Debt Management)
+* **Active Player Selector:** Dropdown displaying player names (`Peter (Host)`, `Matthew`).
+* **Remaining Workout Count:** Displays unresolved debt ($wc$) with dynamic color feedback (green when 0, red when > 0).
+* **Custom Reps Input:** Input box with `Log Push-ups` and `Log Squats` action buttons.
+* **Bulk Clearance Buttons:**
+  * `All Push-ups (wc)`: Clears entire debt with push-ups.
+  * `All Squats (wc * R)`: Clears entire debt with squats according to ratio $R$.
+
+### 5.2 Panel B: Aggregate Ledger (Run Totals)
+* **Stat Grid:** Displays total push-ups completed, total squats completed, and remaining unpaid counters.
+* **Collapsible Squat Ratio Controller:** Arrow toggle (`▼ Squat Ratio` / `▶ Squat Ratio (R = 2)`) with stepper buttons (`-` / `+`) to adjust ratio $R$ during gameplay.
+
+### 5.3 Modals
+1. **Run Start Modal:** Triggered upon run initialization to confirm Workout Mode opt-in and starting squat ratio.
+2. **Run Outcome Modal:**
+   * **Victory Screen:** Renders final party summary table with each player's debt, push-ups, squats, and deaths.
+   * **Defeat Screen:** Triggers the mandatory 30-minute jog penalty with a ticking 24-hour countdown timer (`23:59:59`) and complete party summary table.
+3. **Daemon Host Configuration Modal:** Allows remote guests to configure host IP addresses or ngrok tunnel endpoints directly from the HUD.
+
+Implementation reference: [`src/overlay/renderer.tsx`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/overlay/renderer.tsx#L160-L460).
+
+---
+
+## 6. API Data Contracts & Events
+
+### 6.1 WebSocket Messages (`ws://<host>:8765`)
+
+#### `RUN_DETECTED` (Run Initialized)
 ```json
 {
   "type": "RUN_DETECTED",
-  "timestamp": 1791389000,
+  "timestamp": 1791595114000,
   "data": {
-    "run_id": "mp_run_20261008_101",
+    "run_id": "run_1791595114_2KX7FETFPW50",
     "is_multiplayer": true,
     "player_count": 2,
     "players": [
-      {"index": 0, "name": "HostPlayer", "character": "IRONCLAD"},
-      {"index": 1, "name": "AllyPlayer", "character": "SILENT"}
+      { "index": 0, "name": "Peter", "character": "REGENT" },
+      { "index": 1, "name": "Matthew", "character": "IRONCLAD" }
     ],
     "default_squat_ratio": 2
   }
 }
-
 ```
 
-### 6.2 Floor Resolved & Debt Frame (`WebSocket Push`)
-
-Pushed after every floor commit:
-
+#### `WORKOUT_FLOOR_COMMITTED` (Floor Resolved)
 ```json
 {
   "type": "WORKOUT_FLOOR_COMMITTED",
-  "timestamp": 1791389250,
+  "timestamp": 1791595200000,
   "data": {
-    "floor": 6,
+    "floor": 2,
     "room_type": "monster",
     "players": [
       {
         "player_index": 0,
-        "player_name": "HostPlayer",
+        "player_name": "Peter",
         "evaluation": {
-          "turns_taken_n": 5,
+          "turns_taken_n": 4,
           "player_died": false,
           "deaths_accumulated_d": 0,
-          "hp_lost_h": 14,
-          "formula": "5 * (2 + 0) + 14",
-          "counters_added": 24
+          "hp_lost_h": 9,
+          "formula": "4 * (2 + 0) + 9 = 17",
+          "counters_added": 17
         },
         "debt_state": {
-          "unresolved_counters": 24,
+          "unresolved_counters": 17,
           "squat_ratio": 2
         },
         "aggregates": {
-          "total_counters_accrued": 52,
-          "completed_pushups": 28,
-          "completed_squats": 0
-        }
-      },
-      {
-        "player_index": 1,
-        "player_name": "AllyPlayer",
-        "evaluation": {
-          "turns_taken_n": 3,
-          "player_died": true,
-          "deaths_accumulated_d": 1,
-          "hp_lost_h": 45,
-          "formula": "3 * (2 + 1) + 45",
-          "counters_added": 54
-        },
-        "debt_state": {
-          "unresolved_counters": 54,
-          "squat_ratio": 2
-        },
-        "aggregates": {
-          "total_counters_accrued": 68,
-          "completed_pushups": 14,
+          "total_counters_accrued": 17,
+          "completed_pushups": 0,
           "completed_squats": 0
         }
       }
     ]
   }
 }
-
 ```
 
-### 6.3 Rep Resolution Request (`POST /api/v1/workout/resolve`)
-
-Sent by the overlay when logging reps:
-
-```json
-{
-  "player_index": 0,
-  "action_type": "CUSTOM_ENTRY",
-  "exercise": "squats",
-  "reps": 20,
-  "applied_ratio": 2
-}
-
-```
-
-*(For bulk clearance actions, `action_type` can be `"ALL_PUSHUPS"` or `"ALL_SQUATS"`, omitting manual `reps`).*
-
-### 6.4 Terminal Outcome Frame (`WebSocket Push`)
-
-Pushed upon run finish:
-
+#### `RUN_TERMINATED` (Victory or Defeat)
 ```json
 {
   "type": "RUN_TERMINATED",
-  "timestamp": 1791392000,
+  "timestamp": 1791597400000,
   "data": {
     "outcome": "DEFEAT",
-    "floor_reached": 11,
+    "floor_reached": 12,
     "jog_penalty_required": true,
-    "jog_deadline_timestamp": 1791478400,
+    "jog_deadline_timestamp": 1791683800000,
     "party_summary": [
       {
         "player_index": 0,
-        "player_name": "HostPlayer",
-        "final_unresolved_debt": 0,
-        "total_pushups": 42,
-        "total_squats": 20,
+        "player_name": "Peter",
+        "final_unresolved_debt": 22,
+        "total_pushups": 15,
+        "total_squats": 30,
         "deaths": 0
       },
       {
         "player_index": 1,
-        "player_name": "AllyPlayer",
-        "final_unresolved_debt": 32,
-        "total_pushups": 14,
-        "total_squats": 10,
+        "player_name": "Matthew",
+        "final_unresolved_debt": 8,
+        "total_pushups": 10,
+        "total_squats": 20,
         "deaths": 1
       }
     ]
   }
 }
-
 ```
+
+### 6.2 REST Endpoints (`http://<host>:8765`)
+
+| Endpoint | Method | Payload / Response | Description |
+|---|---|---|---|
+| `/api/v1/session/state` | `GET` | Returns `ActiveSessionStore` | Fetches snapshot of active run debts, aggregates, and player names. |
+| `/api/v1/session/start` | `POST` | `{ "opt_in": true, "squat_ratio": 2 }` | Confirms session opt-in and starting ratio. |
+| `/api/v1/workout/resolve` | `POST` | `{ "player_index": 0, "action_type": "CUSTOM_ENTRY", "exercise": "pushups", "reps": 10 }` | Submits rep deductions. |
+| `/api/v1/config/ratio` | `POST` | `{ "squat_ratio": 3 }` | Dynamically updates squat ratio $R$. |
 
 ---
 
 ## 7. Technical Glossary
 
 | Term | Category | Definition |
-| --- | --- | --- |
-| **Atomic Write** | System Programming | An OS-level file write where data is written to a temporary file and renamed over the target, ensuring game saves are never left in a half-written or corrupt state. |
-| **Canonical Metrics** | Game Architecture | Historical run records (turn logs, HP deltas, card choices) stored directly inside the save file rather than calculated on the fly. |
-| **Debounce** | Software Architecture | Delaying processing until file writes have finished, ensuring the watcher does not parse multiple partial updates from a single save action. |
-| **Defeat Penalty** | Workout Rule | The rule requiring all players to run/jog for 30 minutes within 24 hours if the run ends in defeat. |
-| **Frozen Turn Count ($n_p$)** | Workout Rule | The turn counter freezing at the exact round a player dies in combat, preventing them from being penalized for turns their teammates spent finishing the battle. |
-| **Net HP Lost ($h_p$)** | Workout Engine | Positive health lost on a floor ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$). Gaining health yields 0 penalty. |
-| **Out-of-Process** | Architecture | Running as an external desktop tool rather than modifying the game's internal code, avoiding crashes and keeping Steam achievements intact. |
-| **Read Lock (`EBUSY`)** | System Programming | A temporary access denial occurring when the daemon tries to read a file while the game engine is writing to it. |
-| **Squat Ratio ($R$)** | Workout Rule | An integer value indicating how many squats convert to 1 workout counter. Defaults to 2 and can be adjusted at any time. |
-| **Unresolved Debt** | Workout Engine | Outstanding workout counters that have been earned but not yet settled via completed push-ups or squats. |
-| **Workout Counter ($wc_p$)** | Workout Rule | The normalized exercise unit defined by $wc_p = n_p(2 + d_p) + h_p$. |
-
-```
+|---|---|---|
+| **Atomic Write** | System Programming | An OS-level file write where data is written to a `.tmp` file and renamed atomically over the target, preventing corrupt reads. |
+| **Click-Through Mode** | Overlay Engine | Electron window state where `ignoreMouseEvents(true, { forward: true })` passes mouse clicks directly through to the game. Toggled via `Ctrl+Shift+X`. |
+| **Fractional Remainder** | Workout Engine | Sub-integer squat progress preserved when $R > 1$ and logged squats do not divide evenly by $R$. |
+| **Ngrok Tunneling** | Networking | Secure public tunnel (`https://...ngrok-free.app`) exposing host daemon port `8765` to remote guests over the internet. |
+| **Screen-Saver Z-Order** | Window Management | Electron window level `screen-saver` ensuring overlay HUD remains visible above fullscreen game viewports. |
+| **Turn Freezing ($n_p$)** | Workout Attribution | Halting combat turn counting for a fallen player at their exact round of death, preventing teammates' subsequent turns from penalizing them. |
+| **Workout Counter ($wc_p$)** | Workout Engine | Normalized exercise unit defined by $wc_p = n_p(2 + d_p) + h_p$. |
