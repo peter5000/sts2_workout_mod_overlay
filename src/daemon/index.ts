@@ -127,8 +127,13 @@ app.post('/api/v1/workout/resolve', (req, res) => {
 // 4. POST /api/v1/config/ratio - Updates current squat ratio
 app.post('/api/v1/config/ratio', (req, res) => {
   const payload = req.body as UpdateRatioPayload;
-  if (typeof payload.squat_ratio === 'number' && payload.squat_ratio >= 1) {
-    ledger.setSquatRatio(payload.squat_ratio);
+  const newRatio = typeof payload.squat_ratio === 'number' ? payload.squat_ratio : payload.ratio;
+  if (typeof newRatio === 'number' && newRatio >= 1) {
+    if (typeof payload.player_index === 'number') {
+      ledger.setPlayerSquatRatio(payload.player_index, newRatio);
+    } else {
+      ledger.setSquatRatio(newRatio);
+    }
 
     // Broadcast updated session state to all HUD overlays
     const currentState = ledger.getFullState();

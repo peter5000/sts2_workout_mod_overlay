@@ -93,6 +93,78 @@ $$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups 
 
 ---
 
+## 👥 Who Runs What
+
+| Role | Runs daemon | Runs ngrok | Runs overlay |
+|------|:-----------:|:----------:|:------------:|
+| **Host** (the player whose PC hosts the StS2 co-op lobby / owns the save file) | ✅ | ✅ | ✅ |
+| **Joiner** (everyone else) | ❌ | ❌ | ✅ |
+
+Only the **host** reads the save file, so only the host needs the daemon and the ngrok tunnel.
+Joiners only run the overlay and point it at the host's ngrok URL.
+
+### Build (everyone)
+```bash
+git pull
+npm install
+npm run build
+```
+
+### Host
+```bash
+# Terminal 1 – daemon (watches the save file, serves REST + WebSocket on :8765)
+npm run start:daemon
+
+# Terminal 2 – public tunnel to the daemon (see ngrok setup below)
+npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
+
+# Terminal 3 – your own overlay
+npm run start:overlay
+```
+Send the `https://<something>.ngrok-free.app` forwarding URL ngrok prints to your joiners.
+
+### Joiner
+```bash
+npm run start:overlay
+```
+Then enter the host's ngrok URL (e.g. `https://example-1234.ngrok-free.app`) in the overlay's host field.
+
+---
+
+## 🌐 ngrok Setup (host only, one time)
+
+1. **Sign up** for a free account at <https://dashboard.ngrok.com/signup>.
+2. Copy your authtoken from <https://dashboard.ngrok.com/get-started/your-authtoken>.
+3. Register it locally (stored in your user ngrok config, **not** in this repo):
+   ```bash
+   npx ngrok config add-authtoken 2abcEXAMPLEtoken_0123456789abcdefEXAMPLE
+   ```
+4. Start the tunnel. The `--response-header-add` flag suppresses ngrok's free-tier
+   browser-warning interstitial, which otherwise breaks the overlay's API/WebSocket calls:
+   ```bash
+   npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
+   ```
+5. ngrok prints a forwarding URL such as `https://example-1234.ngrok-free.app` — share that with joiners.
+   On the free plan the URL changes every time ngrok restarts, so re-share it after restarts.
+
+> ⚠️ Never commit your authtoken or your personal ngrok URL.
+
+---
+
+## 🛠️ Troubleshooting
+
+1. Update and rebuild first:
+   ```bash
+   git pull
+   npm install
+   npm run build
+   ```
+2. Restart everything (host: daemon → ngrok → overlay; joiner: overlay). Re-share the ngrok URL if it changed.
+3. Still broken? Open a GitHub issue with: your role (host/joiner), OS, the daemon console output,
+   and what you expected vs. what happened. Redact Steam IDs and ngrok URLs.
+
+---
+
 ## 💻 Development & Testing
 
 ### Launching the Daemon & Overlay

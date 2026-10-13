@@ -2,18 +2,41 @@ import fs from 'fs';
 import path from 'path';
 import { ActiveSessionStore, PartyMemberSummary } from '../shared/types';
 
+export interface FloorPlayerWorkoutLog {
+  player_index: number;
+  player_name: string;
+  counters_accrued: number;
+  unresolved_debt: number;
+  cumulative_pushups: number;
+  cumulative_squats: number;
+  deaths: number;
+  hp_loss: number;
+  turns_taken: number;
+}
+
+export interface FloorWorkoutLog {
+  floor_num: number;
+  room_type: string;
+  timestamp: number;
+  players: FloorPlayerWorkoutLog[];
+}
+
+export interface RunWorkoutHistoryEntry {
+  run_id: string;
+  start_time?: number;
+  completed_at?: number;
+  outcome?: 'VICTORY' | 'DEFEAT' | 'ACTIVE';
+  floors_reached: number;
+  total_counters_accrued: number;
+  total_pushups: number;
+  total_squats: number;
+  jog_penalty_applied: boolean;
+  party_summary?: PartyMemberSummary[];
+  stage_history?: FloorWorkoutLog[];
+}
+
 export interface WorkoutHistoryStore {
-  completed_runs: {
-    run_id: string;
-    completed_at: number;
-    outcome: 'VICTORY' | 'DEFEAT';
-    floors_reached: number;
-    total_counters_accrued: number;
-    total_pushups: number;
-    total_squats: number;
-    jog_penalty_applied: boolean;
-    party_summary?: PartyMemberSummary[];
-  }[];
+  completed_runs: RunWorkoutHistoryEntry[];
 }
 
 export interface ActiveSessionsMapStore {
@@ -76,17 +99,102 @@ export class PersistenceManager {
     }
   }
 
-  public appendHistory(entry: WorkoutHistoryStore['completed_runs'][0]): void {
-    let history: WorkoutHistoryStore = { completed_runs: [] };
-    if (fs.existsSync(this.historyPath)) {
-      try {
-        const content = fs.readFileSync(this.historyPath, 'utf-8');
-        history = JSON.parse(content);
-      } catch (e) {
-        history = { completed_runs: [] };
-      }
+  public getHistoryStore(): WorkoutHistoryStore {
+    if (!fs.existsSync(this.historyPath)) {
+      return { completed_runs: [] };
     }
-    history.completed_runs.push(entry);
+    try {
+      const content = fs.readFileSync(this.historyPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.completed_runs)) {
+        return parsed as WorkoutHistoryStore;
+      }
+      return { completed_runs: [] };
+    } catch (e) {
+      return { completed_runs: [] };
+    }
+  }
+
+  public recordFloorStage(
+    runId: string,
+    stage: FloorWorkoutLog,
+    runMeta: {
+      floors_reached: number;
+      total_counters_accrued: number;
+      total_pushups: number;
+      total_squats: number;
+      outcome?: 'VICTORY' | 'DEFEAT' | 'ACTIVE';
+    }
+  ): void {
+    const history = this.getHistoryStore();
+    let runEntry = history.completed_runs.find((r) => r.run_id === runId);
+
+    if (!runEntry) {
+      runEntry = {
+        run_id: runId,
+        outcome: runMeta.outcome || 'ACTIVE',
+        floors_reached: runMeta.floors_reached,
+        total_counters_accrued: runMeta.total_counters_accrued,
+        total_pushups: runMeta.total_pushups,
+        total_squats: runMeta.total_squats,
+        jog_penalty_applied: runMeta.outcome === 'DEFEAT',
+        stage_history: []
+      };
+      history.completed_runs.push(runEntry);
+    }
+
+    if (!runEntry.stage_history) {
+      runEntry.stage_history = [];
+    }
+
+    const existingStageIdx = runEntry.stage_history.findIndex((s) => s.floor_num === stage.floor_num);
+    if (existingStageIdx >= 0) {
+      runEntry.stage_history[existingStageIdx] = stage;
+    } else {
+      runEntry.stage_history.push(stage);
+      runEntry.stage_history.sort((a, b) => a.floor_num - b.floor_num);
+    }
+
+    runEntry.floors_reached = Math.max(runEntry.floors_reached || 0, runMeta.floors_reached);
+    runEntry.total_counters_accrued = runMeta.total_counters_accrued;
+    runEntry.total_pushups = runMeta.total_pushups;
+    runEntry.total_squats = runMeta.total_squats;
+    if (runMeta.outcome) {
+      runEntry.outcome = runMeta.outcome;
+    }
+
+    this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
+  }
+
+  public updateRunAggregates(
+    runId: string,
+    totalPushups: number,
+    totalSquats: number,
+    totalAccrued: number
+  ): void {
+    const history = this.getHistoryStore();
+    const runEntry = history.completed_runs.find((r) => r.run_id === runId);
+    if (runEntry) {
+      runEntry.total_pushups = totalPushups;
+      runEntry.total_squats = totalSquats;
+      runEntry.total_counters_accrued = totalAccrued;
+      this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
+    }
+  }
+
+  public appendHistory(entry: RunWorkoutHistoryEntry): void {
+    const history = this.getHistoryStore();
+    const existingIdx = history.completed_runs.findIndex((r) => r.run_id === entry.run_id);
+    if (existingIdx >= 0) {
+      const existing = history.completed_runs[existingIdx];
+      history.completed_runs[existingIdx] = {
+        ...existing,
+        ...entry,
+        stage_history: existing.stage_history || entry.stage_history || []
+      };
+    } else {
+      history.completed_runs.push(entry);
+    }
     this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
   }
 

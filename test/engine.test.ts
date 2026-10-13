@@ -73,6 +73,8 @@ function runTests() {
 
   // Test fractional squat remainder tracking with R = 3:
   // Debt is 16. Log 1 squat (R=3) -> debt 16, remainder 1.
+  ledger.setPlayerSquatRatio(0, 3);
+  assert(ledger.getPlayerRatio(1) === 2, 'Ally ratio must stay at default 2 when Host changes theirs');
   ledger.resolveReps({ player_index: 0, action_type: 'CUSTOM_ENTRY', exercise: 'squats', reps: 1, applied_ratio: 3 });
   assert(ledger.getFullState().player_debts[0] === 16, `Debt should remain 16 after 1 squat with R=3`);
   assert(ledger.getFullState().player_squat_remainders?.[0] === 1, `Squat remainder should be 1`);
@@ -88,6 +90,7 @@ function runTests() {
   assert(ledger.getFullState().player_squat_remainders?.[0] === 0, `Squat remainder should reset to 0`);
 
   // Host clears remaining 15 wc with 30 squats (30 / 2 = 15 wc with applied_ratio 2) -> remaining debt 0
+  ledger.setPlayerSquatRatio(0, 2);
   const res2 = ledger.resolveReps({ player_index: 0, action_type: 'CUSTOM_ENTRY', exercise: 'squats', reps: 30, applied_ratio: 2 });
   assert(res2.updatedDebt === 0, `Host remaining debt should be 0 after 30 squats, got ${res2.updatedDebt}`);
 
@@ -105,6 +108,12 @@ function runTests() {
 
   console.log('  ✓ Defeat 24h jog penalty trigger verified');
 
+  const hist = testPersistence.getHistoryStore();
+  const runHist = hist.completed_runs.find((r) => r.run_id === 'test_run_unique_1');
+  assert(!!runHist && (runHist.stage_history || []).length === 1, 'Stage history should have 1 floor entry');
+  assert(runHist!.total_squats === 33 && runHist!.total_pushups === 10, `History totals should be 10 pushups / 33 squats, got ${runHist!.total_pushups}/${runHist!.total_squats}`);
+  console.log('  ✓ Per-floor stage history persisted to workout_history.json');
+
   // 4. Test Native Save File Adapter (normalizeSaveData)
   const { normalizeSaveData } = require('../src/daemon/adapter');
   const nativeSaveData = {
@@ -116,7 +125,7 @@ function runTests() {
         {
           map_point_type: 'ancient',
           rooms: [{ room_type: 'event', turns_taken: 0 }],
-          player_stats: [{ player_id: 1, current_hp: 60, damage_taken: 0, hp_healed: 60 }]
+          player_stats: [{ player_id: 1, current_hp: 60, max_hp: 75, damage_taken: 0, hp_healed: 60 }]
         },
         {
           map_point_type: 'monster',
@@ -134,6 +143,28 @@ function runTests() {
   assert(normalized.floors.length === 2, `Floors count should be 2, got ${normalized.floors.length}`);
   assert(normalized.floors[1].room_type === 'monster', `Floor 2 room_type should be monster`);
   assert(normalized.floors[1].total_combat_turns === 4, `Floor 2 turns should be 4`);
+  // Starting HP: Weary Traveler penalty ignored (hp_start = 60, hp_end = 60 -> 0 HP loss)
+  assert(normalized.floors[0].player_metrics[0].hp_start === 60, `Floor 0 hp_start should be 60, got ${normalized.floors[0].player_metrics[0].hp_start}`);
+  assert(normalized.floors[0].player_metrics[0].hp_end === 60, `Floor 0 hp_end should be 60`);
+
+  // Relic damage test: Precarious Shears deals 16 damage on ancient floor
+  const relicSaveData = {
+    ...nativeSaveData,
+    map_point_history: [
+      [
+        {
+          map_point_type: 'ancient',
+          rooms: [{ room_type: 'event', turns_taken: 0 }],
+          player_stats: [{ player_id: 1, current_hp: 44, max_hp: 75, damage_taken: 16, hp_healed: 60 }]
+        }
+      ]
+    ]
+  };
+  const normalizedRelic = normalizeSaveData(relicSaveData);
+  assert(normalizedRelic.floors[0].player_metrics[0].hp_start === 60, `Relic floor hp_start should be 60`);
+  assert(normalizedRelic.floors[0].player_metrics[0].hp_end === 44, `Relic floor hp_end should be 44`);
+  const relicHpLost = normalizedRelic.floors[0].player_metrics[0].hp_start - normalizedRelic.floors[0].player_metrics[0].hp_end;
+  assert(relicHpLost === 16, `Relic HP loss should be 16, got ${relicHpLost}`);
 
   // Process normalized native save in DebtLedger without error
   const resNative = ledger.processSaveData(normalized);

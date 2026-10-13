@@ -179,7 +179,7 @@ const App: React.FC = () => {
           action_type: actionType,
           exercise,
           reps: val,
-          applied_ratio: session?.squat_ratio || 2
+          applied_ratio: ratio
         })
       });
       fetchState();
@@ -194,7 +194,7 @@ const App: React.FC = () => {
       await fetch(`${apiBase}/api/v1/config/ratio`, {
         method: 'POST',
         headers: customHeaders,
-        body: JSON.stringify({ squat_ratio: newRatio })
+        body: JSON.stringify({ player_index: selectedPlayerIdx, squat_ratio: newRatio })
       });
       fetchState();
     } catch (e) {
@@ -219,7 +219,7 @@ const App: React.FC = () => {
   // Local player active stats
   const activeDebt = session?.player_debts?.[selectedPlayerIdx] || 0;
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
-  const ratio = session?.squat_ratio || 2;
+  const ratio = session?.player_squat_ratios?.[selectedPlayerIdx] || session?.squat_ratio || 2;
   const playerIndices = Object.keys(session?.player_debts || {});
 
   const getPlayerName = (idx: number): string => {

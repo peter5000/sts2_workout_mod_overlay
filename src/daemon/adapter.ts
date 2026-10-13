@@ -73,7 +73,12 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
   // Handle native StS2 Godot save format (current_run.save)
   const seed = raw.seed || raw.players?.[0]?.rng?.seed || '0';
   const startTime = raw.start_time || Date.now();
-  const run_id = raw.run_id || `run_${startTime}_${seed}`;
+  // NOTE: key on start_time only. current_run.save has no top-level seed while the
+  // history .run file does; including the seed made the two IDs differ, so on defeat
+  // the ledger treated the history file as a brand-new run (Panel B reset to 0 and the
+  // losing combat's counters landed in an orphan session).
+  void seed;
+  const run_id = raw.run_id || `run_${startTime}`;
 
   const is_multiplayer = typeof raw.is_multiplayer === 'boolean'
     ? raw.is_multiplayer
@@ -144,31 +149,38 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
 
           // Determine HP at end of floor
           const rawCurrentHp = typeof rawPlayerObj?.current_hp === 'number' ? rawPlayerObj.current_hp : 0;
+          const statHasHp = stat && typeof stat.current_hp === 'number';
+          const statMaxHp = stat && typeof stat.max_hp === 'number' ? stat.max_hp : 0;
+          // Player is dead on this floor: stat reports 0 HP after taking damage in a combat
+          const zeroHpDeath = Boolean(statHasHp && statMaxHp > 0 && stat.current_hp <= 0 && (stat.damage_taken || 0) > 0);
 
-          let endHp = (stat && typeof stat.current_hp === 'number' && stat.current_hp > 0)
+          let endHp = (statHasHp && stat.current_hp > 0)
             ? stat.current_hp
-            : (isLastFloor && rawCurrentHp > 0 ? rawCurrentHp : 0);
+            : (isLastFloor && rawCurrentHp > 0 && !zeroHpDeath ? rawCurrentHp : 0);
 
-          // Initialize HP at start of floor 1
+          // Initialize HP at start of floor 1:
+          // Ignore Weary Traveler starting penalty (baseline to spawn HP, not max HP),
+          // but count any relic damage taken on the starting floor (e.g. Precarious Shears).
           if (playerPrevHp[p.index] === null) {
-            if (stat && typeof stat.current_hp === 'number' && stat.current_hp > 0) {
+            if (statHasHp && stat.current_hp > 0) {
               playerPrevHp[p.index] = stat.current_hp + (stat.damage_taken || 0);
+            } else if (statMaxHp > 0) {
+              playerPrevHp[p.index] = statMaxHp;
             } else {
               playerPrevHp[p.index] = typeof rawPlayerObj?.max_hp === 'number' ? rawPlayerObj.max_hp : 75;
             }
           }
 
           const hp_start = playerPrevHp[p.index] as number;
-          const hp_end = endHp > 0 ? endHp : hp_start;
+          const hp_end = zeroHpDeath ? 0 : (endHp > 0 ? endHp : hp_start);
 
           // Update tracking for entry into next floor
-          playerPrevHp[p.index] = hp_end;
+          playerPrevHp[p.index] = hp_end > 0 ? hp_end : hp_start;
 
-          const maxHp = stat ? (typeof stat.max_hp === 'number' ? stat.max_hp : 0) : 0;
           const died_this_floor = Boolean(
             stat?.died ||
             stat?.died_this_floor ||
-            (maxHp > 0 && hp_end <= 0 && (stat?.damage_taken || 0) > 0)
+            zeroHpDeath
           );
           const death_turn = died_this_floor
             ? (typeof stat?.death_turn === 'number' ? stat.death_turn
