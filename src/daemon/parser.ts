@@ -11,7 +11,7 @@ export class FloorParser {
     playerDeathCounts: Map<number, number>,
     playerUnresolvedDebt: Map<number, number>,
     playerAggregates: Map<number, { accrued: number; pushups: number; squats: number }>,
-    squatRatio: number
+    squatRatio: number | Map<number, number>
   ): PlayerFloorReport[] {
     const isNonCombat: boolean = ['event', 'campfire', 'shop', 'rest'].includes(floorEntry.room_type);
     const reports: PlayerFloorReport[] = [];
@@ -67,7 +67,7 @@ export class FloorParser {
         },
         debt_state: {
           unresolved_counters: newDebt,
-          squat_ratio: squatRatio
+          squat_ratio: typeof squatRatio === 'number' ? squatRatio : (squatRatio.get(idx) ?? 2)
         },
         aggregates: {
           total_counters_accrued: aggs.accrued,

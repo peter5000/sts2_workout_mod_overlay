@@ -1,4 +1,4 @@
-# Slay the Spire 2: Workout Mode Overlay (v1.2.0 Architecture Specification)
+# Slay the Spire 2: Workout Mode Overlay (v1.3.0 Architecture Specification)
 
 ## 1. System & Game Lifecycle Overview
 
@@ -21,6 +21,7 @@ The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon
                   │  For each committed floor:               │
                   │  • Ingest sequential floor metrics       │
                   │  • Calculate wc per player: n(2+d) + h   │
+                  │  • Append stage snapshot to history      │
                   │  • Update Remainder Resolver (Panel A)   │
                   │  • Accept Rep Reductions (Freeform/Bulk) │
                   │  • Update Cumulative Ledger (Panel B)    │
@@ -45,7 +46,7 @@ The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon
 ## 2. Mathematical Model & Attribution Engine
 
 ### 2.1 Per-Player Attribution
-All workout counters, HP deltas, turn survivals, and death penalties are tracked **per individual player**. Party members do not share a pooled debt; each player bears individual accountability for their own combat performance and choices.
+All workout counters, HP deltas, turn survivals, death penalties, and squat conversion ratios are tracked **per individual player**. Party members do not share a pooled debt or synced ratio; each player bears individual accountability for their own combat performance and customized exercise parameters.
 
 Implementation reference: [`src/daemon/parser.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/parser.ts#L15-L80).
 
@@ -64,29 +65,30 @@ Where:
   $$h_p = \max(\text{HP}_{p, \text{start}} - \text{HP}_{p, \text{end}}, 0)$$
   *Healing, relic procs, or net HP increases yield $h_p = 0$.*
 
-### 2.3 Sequential Floor HP Tracking
+### 2.3 Sequential Floor HP Tracking & Floor 0 Rules
 To accurately calculate $h_p$ across floors with post-combat healing relics, the adapter chains floor entries sequentially:
-* **Floor 1:** Initial HP is established from `stat.current_hp + stat.damage_taken` (or `max_hp`).
+* **Floor 0 / Ancient Node (Starting Floor):**
+  * **Weary Traveler Penalty:** Ignored. The starting HP baseline ($\text{HP}_{\text{start}}$) uses the wounded spawn HP rather than full max HP, ensuring the inherent Ascension modifier does not penalize players before playing.
+  * **Starting Relic Damage:** Captured. Relic damage taken on floor 0 (e.g. Precarious Shears dealing 16 self-damage) is added to `stat.damage_taken`, correctly accruing $16\ wc$ without charging the Weary Traveler deficit.
 * **Subsequent Floors:** Floor entry HP ($\text{HP}_{\text{start}}$) is derived from the preceding floor's exit HP ($\text{HP}_{\text{end}}$), guaranteeing that heal events and combat damage are accurately isolated.
+* **Final Combat Lethal Damage:** If a player falls in combat (`current_hp: 0`, `stat.damage_taken > 0`), $\text{HP}_{\text{end}}$ resolves strictly to $0$ (instead of falling back to $\text{HP}_{\text{start}}$), ensuring the lethal battle's full damage is credited.
 
-Implementation reference: [`src/daemon/adapter.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/adapter.ts#L120-L175).
+Implementation reference: [`src/daemon/adapter.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/adapter.ts#L145-L185).
 
-### 2.4 Fractional Squat Remainder Tracking ($R > 1$)
-When Squat Ratio $R > 1$, logging custom squats that do not evenly divide by $R$ stores the fractional remainder in `player_squat_remainders`:
-$$\text{Remainder}_{\text{new}} = (\text{Remainder}_{\text{old}} + \text{Squats}) \bmod R$$
-$$\text{Debt Deducted} = \min\left( \left\lfloor \frac{\text{Remainder}_{\text{old}} + \text{Squats}}{R} \right\rfloor, \text{Debt} \right)$$
+### 2.4 Per-Player Squat Ratio & Fractional Remainder ($R_p \ge 1$)
+Each player configures their own independent conversion ratio $R_p$:
+$$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups}_p + \left\lfloor \frac{\text{Squats}_p}{R_p} \right\rfloor \right)$$
 
-*Example with $R = 3$:*
-1. Logging 1 squat: Debt deducted = $0$, remainder = $1$.
-2. Logging 1 more squat: Debt deducted = $0$, remainder = $2$.
-3. Logging 1 more squat: Debt deducted = $1\ wc$, remainder resets to $0$.
+Logging custom squats that do not evenly divide by $R_p$ stores the fractional remainder in `player_squat_remainders[p]`:
+$$\text{Remainder}_{p, \text{new}} = (\text{Remainder}_{p, \text{old}} + \text{Squats}) \bmod R_p$$
+$$\text{Debt Deducted}_p = \min\left( \left\lfloor \frac{\text{Remainder}_{p, \text{old}} + \text{Squats}}{R_p} \right\rfloor, \text{Debt}_p \right)$$
 
-Implementation reference: [`src/daemon/ledger.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/ledger.ts#L135-L165).
+Implementation reference: [`src/daemon/ledger.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/ledger.ts#L125-L195).
 
 ### 2.5 Capped Custom Rep Logging
 To prevent accidental over-logging from artificially inflating completed rep counts:
 * **Push-ups:** $\text{Push-ups Added} = \min(\text{Reps Input}, \text{Current Debt})$.
-* **Squats:** $\text{Squats Added} = \min(\text{Reps Input}, \max(\text{Current Debt} \times R - \text{Remainder}, 0))$.
+* **Squats:** $\text{Squats Added} = \min(\text{Reps Input}, \max(\text{Current Debt} \times R_p - \text{Remainder}_p, 0))$.
 Logging reps when active debt is 0 will not credit surplus push-ups or squats.
 
 ---
@@ -317,7 +319,7 @@ Implementation reference: [`src/overlay/renderer.tsx`](file:///c:/Users/chans/Do
 | `/api/v1/session/state` | `GET` | Returns `ActiveSessionStore` | Fetches snapshot of active run debts, aggregates, and player names. |
 | `/api/v1/session/start` | `POST` | `{ "opt_in": true, "squat_ratio": 2 }` | Confirms session opt-in and starting ratio. |
 | `/api/v1/workout/resolve` | `POST` | `{ "player_index": 0, "action_type": "CUSTOM_ENTRY", "exercise": "pushups", "reps": 10 }` | Submits rep deductions. |
-| `/api/v1/config/ratio` | `POST` | `{ "squat_ratio": 3 }` | Dynamically updates squat ratio $R$. |
+| `/api/v1/config/ratio` | `POST` | `{ "player_index": 0, "squat_ratio": 3 }` | Dynamically updates squat ratio $R_p$ for a specific player (or globally if omitted). |
 
 ---
 

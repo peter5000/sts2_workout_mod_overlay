@@ -26,6 +26,7 @@ export class DebtLedger {
   private playerAggregates: Map<number, { accrued: number; pushups: number; squats: number }> = new Map();
   private playerSquatRemainders: Map<number, number> = new Map();
   private playerNames: Map<number, string> = new Map();
+  private playerSquatRatios: Map<number, number> = new Map();
   private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
 
   private jogPenaltyActive: boolean = false;
@@ -92,10 +93,11 @@ export class DebtLedger {
           this.playerDeaths,
           this.playerDebts,
           this.playerAggregates,
-          this.squatRatio
+          this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio
         );
         allReports.push(...floorReports);
         latestFloorNum = floorEntry.floor_num;
+        this.recordStage(floorEntry.floor_num, floorEntry.room_type, floorReports, runData.run_status);
       }
 
       this.lastProcessedFloor = latestFloorNum;
@@ -124,7 +126,7 @@ export class DebtLedger {
     const idx = payload.player_index;
     const currentDebt = this.playerDebts.get(idx) || 0;
     const aggs = this.playerAggregates.get(idx) || { accrued: 0, pushups: 0, squats: 0 };
-    const ratio = payload.applied_ratio || this.squatRatio;
+    const ratio = this.getPlayerRatio(idx);
     const currentRemainder = this.playerSquatRemainders.get(idx) || 0;
 
     let debtDeduction = 0;
@@ -169,6 +171,7 @@ export class DebtLedger {
     this.playerAggregates.set(idx, aggs);
 
     this.persistCurrentState();
+    this.syncHistoryAggregates();
 
     return {
       success: true,
@@ -178,11 +181,81 @@ export class DebtLedger {
     };
   }
 
+  /** Sets the default ratio (used for players without an explicit ratio). */
   public setSquatRatio(ratio: number): void {
     if (ratio >= 1) {
       this.squatRatio = ratio;
       this.persistCurrentState();
     }
+  }
+
+  /** Sets the squat ratio for a single player only. */
+  public setPlayerSquatRatio(playerIndex: number, ratio: number): void {
+    if (ratio >= 1) {
+      this.playerSquatRatios.set(playerIndex, ratio);
+      // Remainder is measured in the old ratio's units; reset to avoid mis-crediting
+      const rem = this.playerSquatRemainders.get(playerIndex) || 0;
+      if (rem >= ratio) this.playerSquatRemainders.set(playerIndex, 0);
+      this.persistCurrentState();
+    }
+  }
+
+  public getPlayerRatio(idx: number): number {
+    return this.playerSquatRatios.get(idx) ?? this.squatRatio;
+  }
+
+  private buildRatioMap(): Map<number, number> {
+    const m = new Map<number, number>();
+    this.playerDebts.forEach((_v, k) => m.set(k, this.getPlayerRatio(k)));
+    this.playerSquatRatios.forEach((v, k) => m.set(k, v));
+    return m;
+  }
+
+  private computeTotals() {
+    let totalAccrued = 0, totalPushups = 0, totalSquats = 0;
+    this.playerAggregates.forEach((a) => {
+      totalAccrued += a.accrued;
+      totalPushups += a.pushups;
+      totalSquats += a.squats;
+    });
+    return { totalAccrued, totalPushups, totalSquats };
+  }
+
+  private recordStage(floorNum: number, roomType: string, reports: PlayerFloorReport[], status: 'ACTIVE' | 'VICTORY' | 'DEFEAT'): void {
+    if (!this.runId) return;
+    const t = this.computeTotals();
+    this.persistence.recordFloorStage(
+      this.runId,
+      {
+        floor_num: floorNum,
+        room_type: roomType,
+        timestamp: Date.now(),
+        players: reports.map((r) => ({
+          player_index: r.player_index,
+          player_name: r.player_name,
+          counters_accrued: r.evaluation.counters_added,
+          unresolved_debt: r.debt_state.unresolved_counters,
+          cumulative_pushups: r.aggregates.completed_pushups,
+          cumulative_squats: r.aggregates.completed_squats,
+          deaths: r.evaluation.deaths_accumulated_d,
+          hp_loss: r.evaluation.hp_lost_h,
+          turns_taken: r.evaluation.turns_taken_n
+        }))
+      },
+      {
+        floors_reached: floorNum,
+        total_counters_accrued: t.totalAccrued,
+        total_pushups: t.totalPushups,
+        total_squats: t.totalSquats,
+        outcome: status
+      }
+    );
+  }
+
+  private syncHistoryAggregates(): void {
+    if (!this.runId) return;
+    const t = this.computeTotals();
+    this.persistence.updateRunAggregates(this.runId, t.totalPushups, t.totalSquats, t.totalAccrued);
   }
 
   public setOptIn(optIn: boolean): void {
@@ -202,12 +275,16 @@ export class DebtLedger {
     this.playerAggregates.forEach((val, key) => (aggsObj[key] = val));
     this.playerSquatRemainders.forEach((val, key) => (remaindersObj[key] = val));
     this.playerNames.forEach((val, key) => (namesObj[key] = val));
+    const ratiosObj: Record<number, number> = {};
+    this.playerDebts.forEach((_v, key) => (ratiosObj[key] = this.getPlayerRatio(key)));
+    this.playerSquatRatios.forEach((val, key) => (ratiosObj[key] = val));
 
     return {
       run_id: this.runId,
       is_multiplayer: this.isMultiplayer,
       player_count: this.playerCount,
       squat_ratio: this.squatRatio,
+      player_squat_ratios: ratiosObj,
       opt_in: this.optIn,
       last_processed_floor: this.lastProcessedFloor,
       player_debts: debtsObj,
@@ -252,6 +329,7 @@ export class DebtLedger {
     this.playerAggregates.clear();
     this.playerSquatRemainders.clear();
     this.playerNames.clear();
+    this.playerSquatRatios.clear();
 
     for (const p of this.players) {
       const idx = typeof p.index === 'number' ? p.index : 0;
@@ -281,16 +359,9 @@ export class DebtLedger {
       };
     });
 
-    let totalAccrued = 0;
-    let totalPushups = 0;
-    let totalSquats = 0;
-    this.playerAggregates.forEach((aggs) => {
-      totalAccrued += aggs.accrued;
-      totalPushups += aggs.pushups;
-      totalSquats += aggs.squats;
-    });
+    const { totalAccrued, totalPushups, totalSquats } = this.computeTotals();
 
-    // Save to historical ledger
+    // Save to historical ledger (merges with per-floor stage_history)
     this.persistence.appendHistory({
       run_id: this.runId,
       completed_at: Date.now(),
@@ -299,7 +370,8 @@ export class DebtLedger {
       total_counters_accrued: totalAccrued,
       total_pushups: totalPushups,
       total_squats: totalSquats,
-      jog_penalty_applied: isDefeat
+      jog_penalty_applied: isDefeat,
+      party_summary: summaries
     });
 
     return {
@@ -350,6 +422,10 @@ export class DebtLedger {
     this.playerAggregates.clear();
     this.playerSquatRemainders.clear();
     this.playerNames.clear();
+    this.playerSquatRatios.clear();
+    if (saved.player_squat_ratios) {
+      Object.entries(saved.player_squat_ratios).forEach(([k, v]) => this.playerSquatRatios.set(Number(k), v));
+    }
 
     Object.entries(saved.player_debts || {}).forEach(([k, v]) => this.playerDebts.set(Number(k), v));
     Object.entries(saved.player_deaths || {}).forEach(([k, v]) => this.playerDeaths.set(Number(k), v));

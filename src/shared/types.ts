@@ -11,6 +11,7 @@ export interface ActiveSessionStore {
   is_multiplayer: boolean;
   player_count: number;
   squat_ratio: number;
+  player_squat_ratios?: Record<number, number>;
   opt_in: boolean;
   last_processed_floor: number;
   player_debts: Record<number, number>;
@@ -143,7 +144,9 @@ export interface ResolveRepsPayload {
 }
 
 export interface UpdateRatioPayload {
-  squat_ratio: number;
+  player_index?: number;
+  squat_ratio?: number;
+  ratio?: number;
 }
 
 export interface StartSessionPayload {
