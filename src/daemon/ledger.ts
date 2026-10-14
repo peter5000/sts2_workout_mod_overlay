@@ -81,6 +81,7 @@ export class DebtLedger {
     // Parse unprocessed floors sequentially
     const sortedFloors = [...safeFloors].sort((a, b) => (a.floor_num || 0) - (b.floor_num || 0));
     const newFloors = sortedFloors.filter((f) => f && f.floor_num > this.lastProcessedFloor);
+    const maxFloorNum = sortedFloors.length > 0 ? sortedFloors[sortedFloors.length - 1].floor_num : 0;
 
     if (newFloors.length > 0) {
       const allReports: PlayerFloorReport[] = [];
@@ -88,12 +89,14 @@ export class DebtLedger {
       let latestRoomType = newFloors[newFloors.length - 1].room_type;
 
       for (const floorEntry of newFloors) {
+        const isDefeatFloor = (runData.run_status === 'DEFEAT') && (floorEntry.floor_num === maxFloorNum);
         const floorReports = FloorParser.parseFloor(
           floorEntry,
           this.playerDeaths,
           this.playerDebts,
           this.playerAggregates,
-          this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio
+          this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio,
+          isDefeatFloor
         );
         allReports.push(...floorReports);
         latestFloorNum = floorEntry.floor_num;

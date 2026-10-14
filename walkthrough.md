@@ -113,6 +113,7 @@ $$wc_p = n_p(2 + d_p) + h_p$$
   - Fallen players freeze at `stat.death_turn` so surviving allies prolonging the fight don't inflate the dead player's debt.
 - **Deaths ($d_p$):** Accumulates across the run; acts as a permanent multiplier penalty.
 - **HP Delta ($h_p$):** $\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$. Net healing results in $0$.
+- **Defeat Combat Waiver:** On full game defeat (`run_status === 'DEFEAT'`), the final battle where the party died has its workout counters waived ($wc_p = 0$). Players are not penalized with exercise debt for the losing fight; previous floors' debts are preserved and the mandatory 30-minute jog penalty applies.
 
 ### 2. The Save File Adapter ([`src/daemon/adapter.ts`](./src/daemon/adapter.ts))
 This module handles all the quirks of Slay the Spire 2's Godot save structure:
