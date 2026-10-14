@@ -11,7 +11,8 @@ export class FloorParser {
     playerDeathCounts: Map<number, number>,
     playerUnresolvedDebt: Map<number, number>,
     playerAggregates: Map<number, { accrued: number; pushups: number; squats: number }>,
-    squatRatio: number | Map<number, number>
+    squatRatio: number | Map<number, number>,
+    isDefeatFloor: boolean = false
   ): PlayerFloorReport[] {
     const isNonCombat: boolean = ['event', 'campfire', 'shop', 'rest'].includes(floorEntry.room_type);
     const reports: PlayerFloorReport[] = [];
@@ -41,7 +42,9 @@ export class FloorParser {
       const hpLostH = Math.max(metric.hp_start - metric.hp_end, 0);
 
       // 4. Calculate workout counter (wc_p)
-      const countersAdded = turnsTakenN * (2 + currentDeaths) + hpLostH;
+      // On full game defeat, the losing combat's workout counters are waived
+      const rawCounters = turnsTakenN * (2 + currentDeaths) + hpLostH;
+      const countersAdded = isDefeatFloor ? 0 : rawCounters;
 
       // 5. Update unresolved debt and aggregates
       const prevDebt = playerUnresolvedDebt.get(idx) || 0;
@@ -52,7 +55,9 @@ export class FloorParser {
       aggs.accrued += countersAdded;
       playerAggregates.set(idx, aggs);
 
-      const formulaStr = `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${countersAdded}`;
+      const formulaStr = isDefeatFloor
+        ? `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${rawCounters} (Waived on Defeat)`
+        : `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${countersAdded}`;
 
       reports.push({
         player_index: idx,

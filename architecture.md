@@ -64,6 +64,7 @@ Where:
 * **$h_p$ (Net Positive HP Lost):**
   $$h_p = \max(\text{HP}_{p, \text{start}} - \text{HP}_{p, \text{end}}, 0)$$
   *Healing, relic procs, or net HP increases yield $h_p = 0$.*
+* **Game Defeat Combat Waiver:** On full game defeat (`run_status === 'DEFEAT'`), the final losing combat floor where the party wipes has its workout counters waived ($wc_p = 0$). Players are not penalized with push-up/squat debt for the battle that ended the run; prior floors' debt is preserved and the 30-minute jog penalty applies.
 
 ### 2.3 Sequential Floor HP Tracking & Floor 0 Rules
 To accurately calculate $h_p$ across floors with post-combat healing relics, the adapter chains floor entries sequentially:
@@ -71,7 +72,7 @@ To accurately calculate $h_p$ across floors with post-combat healing relics, the
   * **Weary Traveler Penalty:** Ignored. The starting HP baseline ($\text{HP}_{\text{start}}$) uses the wounded spawn HP rather than full max HP, ensuring the inherent Ascension modifier does not penalize players before playing.
   * **Starting Relic Damage:** Captured. Relic damage taken on floor 0 (e.g. Precarious Shears dealing 16 self-damage) is added to `stat.damage_taken`, correctly accruing $16\ wc$ without charging the Weary Traveler deficit.
 * **Subsequent Floors:** Floor entry HP ($\text{HP}_{\text{start}}$) is derived from the preceding floor's exit HP ($\text{HP}_{\text{end}}$), guaranteeing that heal events and combat damage are accurately isolated.
-* **Final Combat Lethal Damage:** If a player falls in combat (`current_hp: 0`, `stat.damage_taken > 0`), $\text{HP}_{\text{end}}$ resolves strictly to $0$ (instead of falling back to $\text{HP}_{\text{start}}$), ensuring the lethal battle's full damage is credited.
+* **Final Combat in Defeat:** On full game defeat, although the lethal battle registers $\text{HP}_{\text{end}} = 0$ for analytical and stage history accuracy, the workout counters ($wc_p$) for this wipe battle are waived ($0\ wc$), avoiding double-penalizing the party with both exercise counters and the 30-minute defeat jog penalty.
 
 Implementation reference: [`src/daemon/adapter.ts`](file:///c:/Users/chans/Documents/project/sts2_workout_mod/src/daemon/adapter.ts#L145-L185).
 

@@ -29,6 +29,7 @@ Where:
 * $n_p$: Combat turns taken by player $p$ (freezes at death turn if fallen mid-combat; $0$ for events/campfires/shops).
 * $d_p$: Cumulative deaths suffered by player $p$ across the current run up to that point.
 * $h_p$: Net positive HP lost on that floor ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$).
+* **Defeat Combat Waiver:** On full game defeat, workout counters for the final losing battle are waived ($wc_p = 0$). Prior floors' debt is preserved and the 30-minute jog penalty applies.
 
 ### Rep Conversions & Unresolved Debt
 $$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups Completed}_p + \left\lfloor \frac{\text{Squats Completed}_p}{R} \right\rfloor \right)$$

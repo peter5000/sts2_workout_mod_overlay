@@ -96,21 +96,40 @@ function runTests() {
 
   console.log('  ✓ DebtLedger rep resolution and fractional squat remainder tracking verified');
 
-  // 3. Test Defeat Jog Penalty Trigger
-  const defeatSave: RawRunSaveData = {
-    ...saveData,
-    run_status: 'DEFEAT'
+  // 3. Test Defeat Jog Penalty Trigger & Losing Combat Workout Waiver
+  const defeatFloor: RawFloorEntry = {
+    floor_num: 7,
+    room_type: 'elite',
+    total_combat_turns: 5,
+    player_metrics: [
+      { player_index: 0, player_name: 'Host', hp_start: 66, hp_end: 0, died_this_floor: true, death_turn: 5 },
+      { player_index: 1, player_name: 'Ally', hp_start: 50, hp_end: 0, died_this_floor: true, death_turn: 4 }
+    ]
   };
 
-  const { terminatedEvent } = ledger.processSaveData(defeatSave);
+  const defeatSave: RawRunSaveData = {
+    ...saveData,
+    run_status: 'DEFEAT',
+    floors: [floorData, defeatFloor]
+  };
+
+  const { commitData: defeatCommit, terminatedEvent } = ledger.processSaveData(defeatSave);
   assert(terminatedEvent !== null, 'Terminated event should be emitted on status transition to DEFEAT');
   assert(terminatedEvent?.data.jog_penalty_required === true, 'Jog penalty should be required on defeat');
 
-  console.log('  ✓ Defeat 24h jog penalty trigger verified');
+  // Verify that workout counters for the final defeat combat are completely waived (wc = 0)
+  assert(defeatCommit !== null, 'Defeat floor commit data should be generated');
+  assert(defeatCommit!.players[0].evaluation.counters_added === 0, `Defeat combat wc should be 0, got ${defeatCommit!.players[0].evaluation.counters_added}`);
+  assert(defeatCommit!.players[1].evaluation.counters_added === 0, `Defeat combat wc should be 0, got ${defeatCommit!.players[1].evaluation.counters_added}`);
+  assert(defeatCommit!.players[0].evaluation.formula.includes('(Waived on Defeat)'), 'Formula should indicate waived on defeat');
+  // Debt should remain unchanged from before this combat (Host debt was 0 after clearing, Ally debt remains unaffected by floor 7)
+  assert(ledger.getFullState().player_debts[0] === 0, 'Host debt should not increase from defeat combat');
+
+  console.log('  ✓ Defeat 24h jog penalty trigger and losing combat workout counter waiver verified');
 
   const hist = testPersistence.getHistoryStore();
   const runHist = hist.completed_runs.find((r) => r.run_id === 'test_run_unique_1');
-  assert(!!runHist && (runHist.stage_history || []).length === 1, 'Stage history should have 1 floor entry');
+  assert(!!runHist && (runHist.stage_history || []).length === 2, `Stage history should have 2 floor entries, got ${runHist?.stage_history?.length}`);
   assert(runHist!.total_squats === 33 && runHist!.total_pushups === 10, `History totals should be 10 pushups / 33 squats, got ${runHist!.total_pushups}/${runHist!.total_squats}`);
   console.log('  ✓ Per-floor stage history persisted to workout_history.json');
 
