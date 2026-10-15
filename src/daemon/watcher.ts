@@ -131,6 +131,10 @@ export class SaveWatcher {
   }
 
   public stop(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
     if (this.watcher) {
       this.watcher.close();
       this.watcher = null;

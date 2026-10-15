@@ -36,6 +36,49 @@ function reassertAlwaysOnTop() {
   });
 }
 
+let zOrderInterval: NodeJS.Timeout | null = null;
+let isQuitting: boolean = false;
+
+function cleanTeardown() {
+  if (isQuitting) return;
+  isQuitting = true;
+
+  if (zOrderInterval) {
+    clearInterval(zOrderInterval);
+    zOrderInterval = null;
+  }
+
+  try {
+    globalShortcut.unregisterAll();
+  } catch {}
+
+  [windowA, windowB].forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.removeAllListeners();
+        win.destroy();
+      } catch {}
+    }
+  });
+  windowA = null;
+  windowB = null;
+
+  try {
+    app.quit();
+  } catch {}
+
+  // Force clean termination of all child processes (GPU, renderers, utility)
+  setTimeout(() => {
+    process.exit(0);
+  }, 100);
+}
+
+function checkAllClosed() {
+  if (!windowA && !windowB) {
+    cleanTeardown();
+  }
+}
+
 function createWindows() {
   const commonWebPreferences = {
     nodeIntegration: true,
@@ -82,8 +125,14 @@ function createWindows() {
 
   reassertAlwaysOnTop();
 
-  windowA.on('closed', () => { windowA = null; });
-  windowB.on('closed', () => { windowB = null; });
+  windowA.on('closed', () => { 
+    windowA = null; 
+    checkAllClosed();
+  });
+  windowB.on('closed', () => { 
+    windowB = null; 
+    checkAllClosed();
+  });
 
   windowA.on('blur', () => { reassertAlwaysOnTop(); });
   windowB.on('blur', () => { reassertAlwaysOnTop(); });
@@ -99,9 +148,13 @@ function createWindows() {
   });
 
   // Periodic z-order enforcer loop (every 2.5s) to prevent Windows DWM / game fullscreen demotion
-  setInterval(() => {
+  if (zOrderInterval) {
+    clearInterval(zOrderInterval);
+  }
+  zOrderInterval = setInterval(() => {
     reassertAlwaysOnTop();
   }, 2500);
+  zOrderInterval.unref(); // Prevent interval from keeping the event loop alive
 }
 
 function toggleClickThrough(forceState?: boolean) {
@@ -124,6 +177,19 @@ ipcMain.on('set-click-through', (event, ignore: boolean) => {
   toggleClickThrough(ignore);
 });
 
+// IPC handler to close an individual overlay window
+ipcMain.on('close-window', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) {
+    win.close();
+  }
+});
+
+// IPC handler to close all overlays and terminate the application immediately
+ipcMain.on('quit-app', () => {
+  cleanTeardown();
+});
+
 app.on('second-instance', () => {
   if (windowA && !windowA.isDestroyed()) {
     windowA.focus();
@@ -141,11 +207,9 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
+  cleanTeardown();
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  cleanTeardown();
 });
