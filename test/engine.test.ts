@@ -119,15 +119,15 @@ function runTests() {
   assert(terminatedEvent !== null, 'Terminated event should be emitted on status transition to DEFEAT');
   assert(terminatedEvent?.data.jog_penalty_required === true, 'Jog penalty should be required on defeat');
 
-  // Verify that workout counters for the final defeat combat are completely waived (wc = 0)
+  // Verify that workout counters for the final defeat combat are accurately calculated and added (not waived)
   assert(defeatCommit !== null, 'Defeat floor commit data should be generated');
-  assert(defeatCommit!.players[0].evaluation.counters_added === 0, `Defeat combat wc should be 0, got ${defeatCommit!.players[0].evaluation.counters_added}`);
-  assert(defeatCommit!.players[1].evaluation.counters_added === 0, `Defeat combat wc should be 0, got ${defeatCommit!.players[1].evaluation.counters_added}`);
-  assert(defeatCommit!.players[0].evaluation.formula.includes('(Waived on Defeat)'), 'Formula should indicate waived on defeat');
-  // Debt should remain unchanged from before this combat (Host debt was 0 after clearing, Ally debt remains unaffected by floor 7)
-  assert(ledger.getFullState().player_debts[0] === 0, 'Host debt should not increase from defeat combat');
+  assert(defeatCommit!.players[0].evaluation.counters_added === 76, `Defeat combat wc should be 76, got ${defeatCommit!.players[0].evaluation.counters_added}`);
+  assert(defeatCommit!.players[1].evaluation.counters_added === 62, `Defeat combat wc should be 62 (4 turns * (2 + 1 death) + 50 hp), got ${defeatCommit!.players[1].evaluation.counters_added}`);
+  // Debt should reflect the final combat: Host had 0 debt -> 76 wc, Ally had 56 debt -> 118 wc
+  assert(ledger.getFullState().player_debts[0] === 76, `Host debt should increase to 76 from defeat combat, got ${ledger.getFullState().player_debts[0]}`);
+  assert(ledger.getFullState().player_debts[1] === 118, `Ally debt should increase to 118 from defeat combat, got ${ledger.getFullState().player_debts[1]}`);
 
-  console.log('  ✓ Defeat 24h jog penalty trigger and losing combat workout counter waiver verified');
+  console.log('  ✓ Defeat 24h jog penalty trigger and losing combat workout counter preservation verified');
 
   const hist = testPersistence.getHistoryStore();
   const runHist = hist.completed_runs.find((r) => r.run_id === 'test_run_unique_1');
