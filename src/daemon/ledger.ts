@@ -86,26 +86,47 @@ export class DebtLedger {
     const maxFloorNum = sortedFloors.length > 0 ? sortedFloors[sortedFloors.length - 1].floor_num : 0;
     const isTerminal = runData.run_status === 'VICTORY' || runData.run_status === 'DEFEAT';
 
-    // Delayed commit logic:
-    // If run is ACTIVE and has multiple floors, only commit completed past floors (f.floor_num < maxFloorNum),
-    // and hold maxFloorNum as pending in pendingFloorEntry until player advances to next floor.
-    // If run is terminal (VICTORY or DEFEAT), commit all floors including the final boss floor!
+    // Immediate commit logic:
+    // Floors commit immediately upon encounter completion so players can do their workout
+    // during the reward screen without a 1-floor lag.
     const newFloors = sortedFloors.filter((f) => {
       if (!f || f.floor_num <= this.lastProcessedFloor) return false;
-      if (isTerminal) return true;
-      return sortedFloors.length > 1 ? f.floor_num < maxFloorNum : true;
+      return true;
     });
 
-    // Update pending floor for active runs
-    if (!isTerminal && sortedFloors.length > 0) {
-      const activeCandidate = sortedFloors[sortedFloors.length - 1];
-      if (activeCandidate && activeCandidate.floor_num > this.lastProcessedFloor) {
-        this.pendingFloorEntry = activeCandidate;
-      } else {
-        this.pendingFloorEntry = null;
+    this.pendingFloorEntry = null;
+
+    // Check if the current processed floor had reward healing (e.g. potion or relic healing during rewards)
+    if (this.lastProcessedFloor > 0 && sortedFloors.length > 0) {
+      const currentFloorEntry = sortedFloors.find((f) => f && f.floor_num === this.lastProcessedFloor);
+      if (currentFloorEntry) {
+        for (const metric of currentFloorEntry.player_metrics) {
+          const pIdx = metric.player_index;
+          const hist = this.persistence.getHistoryStore();
+          const runHist = hist.completed_runs.find((r) => r.run_id === this.runId);
+          const stageEntry = runHist?.stage_history?.find((s) => s.floor_num === this.lastProcessedFloor);
+          const playerStageLog = stageEntry?.players.find((p) => p.player_index === pIdx);
+
+          if (playerStageLog) {
+            const currentHpLoss = Math.max(0, metric.hp_start - metric.hp_end);
+            if (currentHpLoss < playerStageLog.hp_loss) {
+              const healDiff = playerStageLog.hp_loss - currentHpLoss;
+              const curDebt = this.playerDebts.get(pIdx) || 0;
+              const newDebt = Math.max(0, curDebt - healDiff);
+              this.playerDebts.set(pIdx, newDebt);
+
+              const aggs = this.playerAggregates.get(pIdx) || { accrued: 0, pushups: 0, squats: 0 };
+              aggs.accrued = Math.max(0, aggs.accrued - healDiff);
+              this.playerAggregates.set(pIdx, aggs);
+
+              playerStageLog.hp_loss = currentHpLoss;
+              playerStageLog.counters_accrued = Math.max(0, playerStageLog.counters_accrued - healDiff);
+              playerStageLog.unresolved_debt = newDebt;
+              this.persistence.saveWorkoutHistory(hist);
+            }
+          }
+        }
       }
-    } else {
-      this.pendingFloorEntry = null;
     }
 
     if (newFloors.length > 0) {

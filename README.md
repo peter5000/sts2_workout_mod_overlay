@@ -134,6 +134,37 @@ npm run build
 
 ---
 
+### 🔗 Connecting Both Overlays in Co-op (Step-by-Step)
+
+When playing multiplayer Slay the Spire 2 with friends:
+
+1. **Host does:**
+   * Starts daemon: `npm run start:daemon`
+   * Starts public tunnel: `npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"`
+   * Starts host overlay: `npm run start:overlay` (connects automatically to local daemon `127.0.0.1:8765`)
+   * Shares the ngrok URL (e.g. `https://example-1234.ngrok-free.app`) with co-op party members.
+
+2. **Each Teammate (Joiner) does:**
+   * Opens their overlay on their PC: `npm run start:overlay`
+   * Clicks the connection badge in the top header (shows `⚠️ Offline` or `🌐 127.0.0.1:8765`).
+   * Pastes the Host's ngrok forwarding URL (e.g. `https://example-1234.ngrok-free.app`).
+   * Clicks **Save & Reconnect**. The badge turns green (`🌐 Connected`).
+
+3. **Both Overlays Are Live!**
+   * Each player selects their name from the **Active Player** dropdown on Panel A/B.
+   * As soon as combat ends, both players' HUDs update in real-time with individual workout debt.
+   * Each player logs and clears their own push-ups and squats independently!
+
+#### 💡 Friendly Name Mapping by Steam ID (Optional)
+By default, the overlay identifies players by their Steam ID (e.g. `Player 2 (9280)`).
+To display friendly names like **Peter** and **David**, add each player's 64-bit Steam ID to `.env` on the Host PC:
+```env
+PLAYER_NAME_76561198409498509=Peter
+PLAYER_NAME_76561199390189280=David
+```
+
+---
+
 ## 🛠️ Troubleshooting
 
 1. Update and rebuild first:

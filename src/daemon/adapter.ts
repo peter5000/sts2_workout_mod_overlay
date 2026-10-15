@@ -13,25 +13,35 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
 
   for (const idVal of candidateIds) {
     const strId = String(idVal).trim();
-    const envById = process.env[`PLAYER_ID_${strId}`] || process.env[`PLAYER_NAME_${strId}`];
+    const envById = process.env[`PLAYER_ID_${strId}`] || 
+                    process.env[`PLAYER_NAME_${strId}`] || 
+                    process.env[`STEAM_ID_${strId}`] || 
+                    process.env[strId];
     if (envById && envById.trim().length > 0) {
       return envById.trim();
     }
   }
 
-  // 2. Check env by index: PLAYER_NAME_<idx>
-  const envKey = `PLAYER_NAME_${idx}`;
-  const envName = process.env[envKey];
-  if (envName && envName.trim().length > 0) {
-    return envName.trim();
-  }
-
-  // 3. Check save data name if present and custom (not generic default)
+  // 2. Check save data name if present and custom (not generic default)
   if (rawName && rawName.trim().length > 0 && !rawName.startsWith('Player ') && rawName !== 'UNKNOWN') {
     return rawName.trim();
   }
 
-  // 4. Default fallback by index
+  // 3. If no candidate IDs exist (e.g. offline mock fixtures), check env by index
+  if (candidateIds.length === 0) {
+    const envKey = `PLAYER_NAME_${idx}`;
+    const envName = process.env[envKey];
+    if (envName && envName.trim().length > 0) {
+      return envName.trim();
+    }
+    return `Player ${idx + 1}`;
+  }
+
+  // 4. Default fallback showing Steam ID or Player N
+  const primaryId = String(candidateIds[0]);
+  if (primaryId.length >= 16) {
+    return `Player ${idx + 1} (${primaryId.slice(-4)})`;
+  }
   return `Player ${idx + 1}`;
 }
 
@@ -172,6 +182,8 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
           if (playerPrevHp[p.index] === null) {
             if (statHasHp && stat.current_hp > 0) {
               playerPrevHp[p.index] = stat.current_hp + (stat.damage_taken || 0);
+            } else if (rawCurrentHp > 0) {
+              playerPrevHp[p.index] = rawCurrentHp;
             } else if (statMaxHp > 0) {
               playerPrevHp[p.index] = statMaxHp;
             } else {
@@ -179,8 +191,15 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             }
           }
 
-          const hp_start = playerPrevHp[p.index] as number;
-          const hp_end = endHp > 0 ? endHp : (statHasHp && stat.current_hp === 0 ? 0 : hp_start);
+          let hp_start = playerPrevHp[p.index] as number;
+          let hp_end = endHp > 0 ? endHp : (statHasHp && stat.current_hp === 0 ? 0 : hp_start);
+
+          // Absolute defense for starting floor / Neow room:
+          // Neow room has 0 combat turns. If no damage was explicitly taken from a relic/event choice,
+          // hp_loss must be exactly 0 (Weary Traveler spawn HP reduction is never damage).
+          if (globalFloorNum === 1 && (!stat || (stat.damage_taken || 0) === 0)) {
+            hp_start = hp_end;
+          }
 
           // Update tracking for entry into next floor
           playerPrevHp[p.index] = hp_end;

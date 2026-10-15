@@ -271,8 +271,8 @@ function runTests() {
 
   console.log('  ✓ 1-HP revive mid-combat death and subsequent floor penalty verified');
 
-  // 7. Test Delayed Commit Lifecycle & Manual Commit
-  const delayedLedger = new DebtLedger(testPersistence);
+  // 7. Test Immediate Commit Lifecycle & Dynamic Reward Healing (No 1-floor lag!)
+  const testLedger = new DebtLedger(testPersistence);
   const floor1: RawFloorEntry = {
     floor_num: 1,
     room_type: 'event',
@@ -285,80 +285,55 @@ function runTests() {
     total_combat_turns: 3,
     player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 70, died_this_floor: false, death_turn: null }]
   };
-  const floor3: RawFloorEntry = {
-    floor_num: 3,
-    room_type: 'monster',
-    total_combat_turns: 4,
-    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 70, hp_end: 60, died_this_floor: false, death_turn: null }]
-  };
 
-  // Step A: Floors 1 & 2 present. Floor 1 committed, Floor 2 pending rewards.
-  delayedLedger.processSaveData({
-    run_id: 'run_delayed_test',
+  // Step A: Floor 2 completes combat (3 turns, 10 dmg -> 16 wc). Commits immediately upon combat end!
+  testLedger.processSaveData({
+    run_id: 'run_immediate_test',
     is_multiplayer: false,
     player_count: 1,
     players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
     run_status: 'ACTIVE',
     floors: [floor1, floor2]
   });
-  let delayedState = delayedLedger.getFullState();
-  assert(delayedState.pending_floor?.floor_num === 2, `Floor 2 should be pending rewards, got ${delayedState.pending_floor?.floor_num}`);
-  assert(delayedState.player_debts[0] === 0, `Debt should be 0 because Floor 2 is not committed yet, got ${delayedState.player_debts[0]}`);
+  let stateNow = testLedger.getFullState();
+  assert(stateNow.player_debts[0] === 16, `Floor 2 should commit immediately (16 wc), got ${stateNow.player_debts[0]}`);
 
-  // Step B: Player moves to Floor 3 -> Floor 2 is committed, Floor 3 is pending!
-  // Floor 2 debt: 3 turns * 2 + 10 dmg = 16 wc.
-  delayedLedger.processSaveData({
-    run_id: 'run_delayed_test',
-    is_multiplayer: false,
-    player_count: 1,
-    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
-    run_status: 'ACTIVE',
-    floors: [floor1, floor2, floor3]
-  });
-  delayedState = delayedLedger.getFullState();
-  assert(delayedState.pending_floor?.floor_num === 3, `Floor 3 should be pending rewards, got ${delayedState.pending_floor?.floor_num}`);
-  assert(delayedState.player_debts[0] === 16, `Debt should be 16 from committed Floor 2, got ${delayedState.player_debts[0]}`);
-
-  // Step C: Player saves & quits mid-rewards on Floor 3 -> triggers manual commitPendingFloor()
-  // Floor 3 debt: 4 turns * 2 + 10 dmg = 18 wc. Total debt: 16 + 18 = 34 wc.
-  const manualCommit = delayedLedger.commitPendingFloor();
-  assert(manualCommit !== null && manualCommit.floor === 3, 'Manual commit should commit floor 3');
-  delayedState = delayedLedger.getFullState();
-  assert(delayedState.pending_floor === null, 'Pending floor should be cleared after manual commit');
-  assert(delayedState.player_debts[0] === 34, `Debt should be 34 after manual commit of Floor 3, got ${delayedState.player_debts[0]}`);
-
-  // Step D: Re-sending Floor 3 does not duplicate debt
-  delayedLedger.processSaveData({
-    run_id: 'run_delayed_test',
-    is_multiplayer: false,
-    player_count: 1,
-    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
-    run_status: 'ACTIVE',
-    floors: [floor1, floor2, floor3]
-  });
-  assert(delayedLedger.getFullState().player_debts[0] === 34, 'Debt must not duplicate on save rescan');
-
-  // Step E: Final boss victory floor -> commits immediately
-  const bossFloor: RawFloorEntry = {
-    floor_num: 4,
-    room_type: 'boss',
-    total_combat_turns: 5,
-    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 60, hp_end: 45, died_this_floor: false, death_turn: null }]
+  // Step B: During rewards, player drinks a potion and heals 6 HP (hp_end becomes 76 instead of 70).
+  // Ledger dynamically adjusts Floor 2 debt: 16 - 6 = 10 wc!
+  const floor2Healed: RawFloorEntry = {
+    ...floor2,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 76, died_this_floor: false, death_turn: null }]
   };
-  // Boss debt: 5 turns * 2 + 15 dmg = 25 wc. Total: 34 + 25 = 59 wc.
-  delayedLedger.processSaveData({
-    run_id: 'run_delayed_test',
+  testLedger.processSaveData({
+    run_id: 'run_immediate_test',
     is_multiplayer: false,
     player_count: 1,
     players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
-    run_status: 'VICTORY',
-    floors: [floor1, floor2, floor3, bossFloor]
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2Healed]
   });
-  delayedState = delayedLedger.getFullState();
-  assert(delayedState.player_debts[0] === 59, `Debt should be 59 on VICTORY terminal commit, got ${delayedState.player_debts[0]}`);
-  assert(delayedState.pending_floor === null, 'No pending floor on terminal run');
+  stateNow = testLedger.getFullState();
+  assert(stateNow.player_debts[0] === 10, `Debt should dynamically reduce to 10 after 6 HP reward heal, got ${stateNow.player_debts[0]}`);
 
-  console.log('  ✓ Delayed commit lifecycle, manual commit button, and final boss victory commit verified');
+  // Step C: Player enters Floor 3 (4 turns, 10 dmg -> 18 wc). Commits immediately! Total debt: 10 + 18 = 28 wc.
+  const floor3: RawFloorEntry = {
+    floor_num: 3,
+    room_type: 'monster',
+    total_combat_turns: 4,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 76, hp_end: 66, died_this_floor: false, death_turn: null }]
+  };
+  testLedger.processSaveData({
+    run_id: 'run_immediate_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2Healed, floor3]
+  });
+  stateNow = testLedger.getFullState();
+  assert(stateNow.player_debts[0] === 28, `Total debt should be 28, got ${stateNow.player_debts[0]}`);
+
+  console.log('  ✓ Immediate commit (zero lag) and dynamic reward healing adjustment verified');
 
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

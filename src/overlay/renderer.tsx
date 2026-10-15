@@ -312,16 +312,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {session?.pending_floor && (
-            <div style={styles.pendingFloorBanner}>
-              <span style={{ fontSize: 'clamp(9px, 1.8vh, 11px)', color: '#ecc94b', fontWeight: 'bold' }}>
-                Floor {session.pending_floor.floor_num} rewards pending
-              </span>
-              <button onClick={handleCommitPendingFloor} style={styles.btnCommitPending} title="Commit debt now before closing game">
-                Commit Floor Now
-              </button>
-            </div>
-          )}
+
 
           <div style={styles.counterBox}>
             <div style={styles.counterLabel}>
