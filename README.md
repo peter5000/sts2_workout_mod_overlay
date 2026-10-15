@@ -48,7 +48,6 @@ Before getting started, make sure you have the following installed on your PC:
     npm -v
     ```
 * **ngrok**: Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup) to get a free authtoken (needed to tunnel your local daemon securely to your teammates).
-* **Python 3** *(Optional)*: [Download Python](https://www.python.org/) (recommended on Windows in case native build tools are needed).
 
 #### 2. Installation & Setup
 ```bash
