@@ -27,87 +27,94 @@
 
 ## 🚀 Getting Started
 
-Choose your role to jump straight to the relevant setup guide:
+Choose your role to jump directly to your self-contained setup guide:
 * 👑 **If you are the Host** (hosting the game lobby / owning the save file): **[Start here](#host-setup)**
 * 🎮 **If you are Joining** (co-op party member connecting remotely): **[Start here](#joiner-setup)**
 
 ---
 
-### 📦 Prerequisites & System Dependencies
+<a id="host-setup"></a>
+### 👑 Host Setup Guide
 
-Before running the overlay, ensure your system has the following installed:
+The host's PC runs Slay the Spire 2, monitors save checkpoints, and hosts the workout relay daemon.
 
-1. **Git**: [Download Git](https://git-scm.com/) (required to clone and update the repository)
-2. **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
-   * Verify installation in your terminal:
-     ```bash
-     node -v
-     npm -v
-     ```
-3. **Python 3** *(Optional)*: [Download Python](https://www.python.org/) (recommended on Windows in case native dependencies require build tools)
+#### 1. Prerequisites & Dependencies (Host)
+Before getting started, make sure you have the following installed on your PC:
+* **Git**: [Download Git](https://git-scm.com/) (required to clone and update the project)
+* **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
+  * Verify installation in your terminal:
+    ```bash
+    node -v
+    npm -v
+    ```
+* **ngrok**: Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup) to get a free authtoken (needed to tunnel your local daemon securely to your teammates).
+* **Python 3** *(Optional)*: [Download Python](https://www.python.org/) (recommended on Windows in case native build tools are needed).
 
----
-
-### 📥 1. Common Installation (Everyone)
-
-Both the Host and Joiners need to clone the repository and install dependencies:
-
+#### 2. Installation & Setup
 ```bash
 # 1. Clone the repository
 git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
 cd sts2_workout_mod_overlay
 
-# 2. Install dependencies
+# 2. Install dependencies & build
 npm install
-
-# 3. Build the overlay & daemon bundle
 npm run build
+
+# 3. Configure environment
+cp .env.example .env
+```
+*(Optional: Edit `STS2_SAVE_DIR` in `.env` if your StS2 saves are in a custom directory).*
+
+#### 3. One-Time ngrok Setup
+Copy your authtoken from [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) and register it locally:
+```bash
+npx ngrok config add-authtoken YOUR_AUTHTOKEN_HERE
 ```
 
----
-
-<a id="host-setup"></a>
-### 👑 2. Host Setup Guide
-
-The host's PC runs Slay the Spire 2, monitors save checkpoints, and hosts the workout relay daemon.
-
-1. **Configure Environment:**
-   Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-   *(Optional: Edit `STS2_SAVE_DIR` in `.env` if your StS2 saves are in a custom path).*
-
-2. **One-Time ngrok Setup** (to let teammates connect securely):
-   * Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup).
-   * Copy your authtoken from [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken).
-   * Register your token locally (one-time command, stored in your user profile):
-     ```bash
-     npx ngrok config add-authtoken YOUR_AUTHTOKEN_HERE
-     ```
-
-3. **Launch Session (3 Terminals):**
-   * **Terminal 1 — Start the Save Daemon:**
-     ```bash
-     npm run start:daemon
-     ```
-   * **Terminal 2 — Open Public Tunnel:**
-     ```bash
-     npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
-     ```
-     *Copy the `https://<something>.ngrok-free.app` forwarding URL printed by ngrok and share it with your co-op teammates.*
-   * **Terminal 3 — Launch Your HUD Overlay:**
-     ```bash
-     npm run start:overlay
-     ```
+#### 4. Launching Session (3 Terminals)
+* **Terminal 1 — Start the Save Daemon:**
+  ```bash
+  npm run start:daemon
+  ```
+* **Terminal 2 — Open Public Tunnel:**
+  ```bash
+  npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
+  ```
+  *Copy the `https://<something>.ngrok-free.app` forwarding URL printed by ngrok and share it with your co-op teammates.*
+* **Terminal 3 — Launch Your HUD Overlay:**
+  ```bash
+  npm run start:overlay
+  ```
 
 ---
 
 <a id="joiner-setup"></a>
-### 🎮 3. Joiner Setup Guide
+### 🎮 Joiner Setup Guide
 
-Joiners do **not** need to touch save files or run any background daemons or ngrok tunnels. You only run the transparent overlay HUD and connect to the Host.
+Joiners do **not** need StS2 save file access, daemon background processes, or ngrok accounts. You only run the transparent overlay HUD and connect to the host.
 
+#### 1. Prerequisites & Dependencies (Joiner)
+Before getting started, make sure you have the following installed on your PC:
+* **Git**: [Download Git](https://git-scm.com/) (required to clone and update the project)
+* **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
+  * Verify installation in your terminal:
+    ```bash
+    node -v
+    npm -v
+    ```
+
+#### 2. Installation & Setup
+```bash
+# 1. Clone the repository
+git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
+cd sts2_workout_mod_overlay
+
+# 2. Install dependencies & build
+npm install
+npm run build
+```
+
+#### 3. Launch & Connect
 1. **Launch Your Overlay:**
    ```bash
    npm run start:overlay
