@@ -1,4 +1,4 @@
-﻿import http from 'http';
+import http from 'http';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
@@ -195,3 +195,25 @@ server.listen(PORT, HOST, () => {
 
   watcher.start();
 });
+
+// Graceful process shutdown handling to release watchers, sockets, and ports cleanly
+const handleShutdown = () => {
+  console.log('\n[DAEMON] Shutting down cleanly...');
+  try {
+    watcher.stop();
+  } catch {}
+  try {
+    wss.clients.forEach((client) => {
+      try { client.close(); } catch {}
+    });
+    wss.close();
+  } catch {}
+  server.close(() => {
+    console.log('[DAEMON] Server closed cleanly.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 1000).unref();
+};
+
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);

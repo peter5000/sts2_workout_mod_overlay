@@ -139,14 +139,28 @@ const App: React.FC = () => {
 
     connectWS();
 
-    // Listen to IPC click-through state changes
-    ipcRenderer.on('click-through-changed', (event, state: boolean) => {
+    const clickThroughHandler = (_event: any, state: boolean) => {
       setClickThrough(state);
-    });
+    };
+    ipcRenderer.on('click-through-changed', clickThroughHandler);
+
+    const handleBeforeUnload = () => {
+      isCancelled = true;
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+      ipcRenderer.removeListener('click-through-changed', clickThroughHandler);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       isCancelled = true;
-      if (ws) ws.close();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+      ipcRenderer.removeListener('click-through-changed', clickThroughHandler);
     };
   }, [daemonHost]);
 
@@ -267,6 +281,11 @@ const App: React.FC = () => {
         input[type=number] {
           -moz-appearance: textfield;
         }
+        .overlay-close-btn:hover {
+          background-color: #e53e3e !important;
+          border-color: rgba(255, 255, 255, 0.7) !important;
+          transform: scale(1.08);
+        }
       `}</style>
       {/* Header Bar with Click Through (Ctrl+Shift+X) & Host IP Switcher */}
       <div style={styles.header}>
@@ -297,6 +316,21 @@ const App: React.FC = () => {
             }}
           >
             {clickThrough ? 'Click through ON (Ctrl+Shift+X)' : 'Click through OFF (Ctrl+Shift+X)'}
+          </button>
+          <button
+            className="overlay-close-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (e.shiftKey || e.ctrlKey) {
+                ipcRenderer.send('quit-app');
+              } else {
+                ipcRenderer.send('close-window');
+              }
+            }}
+            title="Close this overlay (Shift+Click to quit all)"
+            style={styles.btnClose}
+          >
+            ✕
           </button>
         </div>
       </div>
@@ -610,6 +644,23 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     WebkitAppRegion: 'no-drag'
+  } as React.CSSProperties,
+  btnClose: {
+    padding: 'clamp(2px, 0.5vh, 4px) clamp(6px, 1.2vw, 9px)',
+    borderRadius: '4px',
+    color: '#fff',
+    fontSize: 'clamp(10px, 2vh, 12px)',
+    fontWeight: 'bold',
+    border: '1px solid rgba(255, 255, 255, 0.25)',
+    background: 'rgba(229, 62, 62, 0.75)',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s ease',
+    WebkitAppRegion: 'no-drag',
+    marginLeft: '3px',
+    lineHeight: 1
   } as React.CSSProperties,
   panel: {
     flex: 1,
