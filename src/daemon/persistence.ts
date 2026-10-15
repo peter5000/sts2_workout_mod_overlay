@@ -99,6 +99,10 @@ export class PersistenceManager {
     }
   }
 
+  public saveWorkoutHistory(history: WorkoutHistoryStore): void {
+    this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
+  }
+
   public getHistoryStore(): WorkoutHistoryStore {
     if (!fs.existsSync(this.historyPath)) {
       return { completed_runs: [] };

@@ -140,7 +140,7 @@ Logging reps when active debt is 0 will not credit surplus push-ups or squats.
 │                      ├──────────────────────────┐                            │
 │                      ▼ (Local ws://127.0.0.1)   ▼ (Remote wss://ngrok-tunnel)│
 │  ┌─────────────────────────────────────┐  ┌───────────────────────────────┐  │
-│  │ HOST OVERLAY HUD                    │  │ GUEST OVERLAY HUD (Guest)   │  │
+│  │ HOST OVERLAY HUD                    │  │ GUEST OVERLAY HUD (PlayerTwo)   │  │
 │  │ (Electron / src/overlay/main.ts)    │  │ (Electron / Client PC)        │  │
 │  │ • Panel A: Remainder Resolver       │  │ • Panel A: Remainder Resolver │  │
 │  │ • Panel B: Run Ledger               │  │ • Panel B: Run Ledger         │  │
@@ -202,7 +202,7 @@ Implementation reference: [`src/overlay/main.ts`](./src/overlay/main.ts#L30-L115
 ## 5. Overlay UI/UX Components
 
 ### 5.1 Panel A: Remainder Resolver (Debt Management)
-* **Active Player Selector:** Dropdown displaying player names (`HostPlayer (Host)`, `AllyPlayer`).
+* **Active Player Selector:** Dropdown displaying player names (`PlayerOne (Host)`, `PlayerTwo`).
 * **Remaining Workout Count:** Displays unresolved debt ($wc$) with dynamic color feedback (green when 0, red when > 0).
 * **Custom Reps Input:** Input box with `Log Push-ups` and `Log Squats` action buttons.
 * **Bulk Clearance Buttons:**
@@ -238,8 +238,8 @@ Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.ts
     "is_multiplayer": true,
     "player_count": 2,
     "players": [
-      { "index": 0, "name": "HostPlayer", "character": "REGENT" },
-      { "index": 1, "name": "AllyPlayer", "character": "IRONCLAD" }
+      { "index": 0, "name": "PlayerOne", "character": "REGENT" },
+      { "index": 1, "name": "PlayerTwo", "character": "IRONCLAD" }
     ],
     "default_squat_ratio": 2
   }
@@ -257,7 +257,7 @@ Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.ts
     "players": [
       {
         "player_index": 0,
-        "player_name": "HostPlayer",
+        "player_name": "PlayerOne",
         "evaluation": {
           "turns_taken_n": 4,
           "player_died": false,
@@ -294,7 +294,7 @@ Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.ts
     "party_summary": [
       {
         "player_index": 0,
-        "player_name": "HostPlayer",
+        "player_name": "PlayerOne",
         "final_unresolved_debt": 22,
         "total_pushups": 15,
         "total_squats": 30,
@@ -302,7 +302,7 @@ Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.ts
       },
       {
         "player_index": 1,
-        "player_name": "AllyPlayer",
+        "player_name": "PlayerTwo",
         "final_unresolved_debt": 8,
         "total_pushups": 10,
         "total_squats": 20,
