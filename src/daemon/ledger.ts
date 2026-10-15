@@ -1,5 +1,6 @@
-import {
+﻿import {
   RawRunSaveData,
+  RawFloorEntry,
   PlayerFloorReport,
   ResolveRepsPayload,
   FloorCommitData,
@@ -28,6 +29,8 @@ export class DebtLedger {
   private playerNames: Map<number, string> = new Map();
   private playerSquatRatios: Map<number, number> = new Map();
   private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
+
+  private pendingFloorEntry: RawFloorEntry | null = null;
 
   private jogPenaltyActive: boolean = false;
   private jogPenaltyDeadline: number | null = null;
@@ -80,8 +83,30 @@ export class DebtLedger {
 
     // Parse unprocessed floors sequentially
     const sortedFloors = [...safeFloors].sort((a, b) => (a.floor_num || 0) - (b.floor_num || 0));
-    const newFloors = sortedFloors.filter((f) => f && f.floor_num > this.lastProcessedFloor);
     const maxFloorNum = sortedFloors.length > 0 ? sortedFloors[sortedFloors.length - 1].floor_num : 0;
+    const isTerminal = runData.run_status === 'VICTORY' || runData.run_status === 'DEFEAT';
+
+    // Delayed commit logic:
+    // If run is ACTIVE and has multiple floors, only commit completed past floors (f.floor_num < maxFloorNum),
+    // and hold maxFloorNum as pending in pendingFloorEntry until player advances to next floor.
+    // If run is terminal (VICTORY or DEFEAT), commit all floors including the final boss floor!
+    const newFloors = sortedFloors.filter((f) => {
+      if (!f || f.floor_num <= this.lastProcessedFloor) return false;
+      if (isTerminal) return true;
+      return sortedFloors.length > 1 ? f.floor_num < maxFloorNum : true;
+    });
+
+    // Update pending floor for active runs
+    if (!isTerminal && sortedFloors.length > 0) {
+      const activeCandidate = sortedFloors[sortedFloors.length - 1];
+      if (activeCandidate && activeCandidate.floor_num > this.lastProcessedFloor) {
+        this.pendingFloorEntry = activeCandidate;
+      } else {
+        this.pendingFloorEntry = null;
+      }
+    } else {
+      this.pendingFloorEntry = null;
+    }
 
     if (newFloors.length > 0) {
       const allReports: PlayerFloorReport[] = [];
@@ -123,6 +148,36 @@ export class DebtLedger {
     this.persistCurrentState();
 
     return { isNewRun, commitData, terminatedEvent };
+  }
+
+  public commitPendingFloor(): FloorCommitData | null {
+    if (!this.pendingFloorEntry || this.pendingFloorEntry.floor_num <= this.lastProcessedFloor) {
+      return null;
+    }
+
+    const floorEntry = this.pendingFloorEntry;
+    this.pendingFloorEntry = null;
+
+    const floorReports = FloorParser.parseFloor(
+      floorEntry,
+      this.playerDeaths,
+      this.playerDebts,
+      this.playerAggregates,
+      this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio,
+      false
+    );
+
+    this.lastProcessedFloor = floorEntry.floor_num;
+    this.recordStage(floorEntry.floor_num, floorEntry.room_type, floorReports, this.runStatus);
+
+    const commitData: FloorCommitData = {
+      floor: floorEntry.floor_num,
+      room_type: floorEntry.room_type,
+      players: floorReports
+    };
+
+    this.persistCurrentState();
+    return commitData;
   }
 
   public resolveReps(payload: ResolveRepsPayload): { success: boolean; updatedDebt: number; updatedPushups: number; updatedSquats: number } {
@@ -184,66 +239,74 @@ export class DebtLedger {
     };
   }
 
-  /** Sets the default ratio (used for players without an explicit ratio). */
   public setSquatRatio(ratio: number): void {
-    if (ratio >= 1) {
-      this.squatRatio = ratio;
-      this.persistCurrentState();
-    }
+    const clamped = Math.max(1, Math.min(ratio, 10));
+    this.squatRatio = clamped;
+    this.players.forEach((p) => {
+      this.playerSquatRatios.set(p.index, clamped);
+    });
+    this.persistCurrentState();
   }
 
-  /** Sets the squat ratio for a single player only. */
   public setPlayerSquatRatio(playerIndex: number, ratio: number): void {
-    if (ratio >= 1) {
-      this.playerSquatRatios.set(playerIndex, ratio);
-      // Remainder is measured in the old ratio's units; reset to avoid mis-crediting
-      const rem = this.playerSquatRemainders.get(playerIndex) || 0;
-      if (rem >= ratio) this.playerSquatRemainders.set(playerIndex, 0);
-      this.persistCurrentState();
-    }
+    const clamped = Math.max(1, Math.min(ratio, 10));
+    this.playerSquatRatios.set(playerIndex, clamped);
+    this.persistCurrentState();
   }
 
-  public getPlayerRatio(idx: number): number {
-    return this.playerSquatRatios.get(idx) ?? this.squatRatio;
+  public getPlayerRatio(playerIndex: number): number {
+    return this.playerSquatRatios.get(playerIndex) ?? this.squatRatio;
   }
 
   private buildRatioMap(): Map<number, number> {
-    const m = new Map<number, number>();
-    this.playerDebts.forEach((_v, k) => m.set(k, this.getPlayerRatio(k)));
-    this.playerSquatRatios.forEach((v, k) => m.set(k, v));
-    return m;
+    const map = new Map<number, number>();
+    this.players.forEach((p) => {
+      map.set(p.index, this.getPlayerRatio(p.index));
+    });
+    return map;
   }
 
-  private computeTotals() {
-    let totalAccrued = 0, totalPushups = 0, totalSquats = 0;
-    this.playerAggregates.forEach((a) => {
-      totalAccrued += a.accrued;
-      totalPushups += a.pushups;
-      totalSquats += a.squats;
+  private computeTotals(): { totalAccrued: number; totalPushups: number; totalSquats: number } {
+    let totalAccrued = 0;
+    let totalPushups = 0;
+    let totalSquats = 0;
+    this.playerAggregates.forEach((aggs) => {
+      totalAccrued += aggs.accrued;
+      totalPushups += aggs.pushups;
+      totalSquats += aggs.squats;
     });
     return { totalAccrued, totalPushups, totalSquats };
   }
 
-  private recordStage(floorNum: number, roomType: string, reports: PlayerFloorReport[], status: 'ACTIVE' | 'VICTORY' | 'DEFEAT'): void {
+  private recordStage(
+    floorNum: number,
+    roomType: string,
+    reports: PlayerFloorReport[],
+    status: 'ACTIVE' | 'VICTORY' | 'DEFEAT'
+  ): void {
     if (!this.runId) return;
+
+    const stagePlayers = reports.map((r) => ({
+      player_index: r.player_index,
+      player_name: r.player_name,
+      counters_accrued: r.evaluation.counters_added,
+      unresolved_debt: r.debt_state.unresolved_counters,
+      cumulative_pushups: r.aggregates.completed_pushups,
+      cumulative_squats: r.aggregates.completed_squats,
+      deaths: r.evaluation.deaths_accumulated_d,
+      hp_loss: r.evaluation.hp_lost_h,
+      turns_taken: r.evaluation.turns_taken_n
+    }));
+
     const t = this.computeTotals();
+
     this.persistence.recordFloorStage(
       this.runId,
       {
         floor_num: floorNum,
         room_type: roomType,
         timestamp: Date.now(),
-        players: reports.map((r) => ({
-          player_index: r.player_index,
-          player_name: r.player_name,
-          counters_accrued: r.evaluation.counters_added,
-          unresolved_debt: r.debt_state.unresolved_counters,
-          cumulative_pushups: r.aggregates.completed_pushups,
-          cumulative_squats: r.aggregates.completed_squats,
-          deaths: r.evaluation.deaths_accumulated_d,
-          hp_loss: r.evaluation.hp_lost_h,
-          turns_taken: r.evaluation.turns_taken_n
-        }))
+        players: stagePlayers
       },
       {
         floors_reached: floorNum,
@@ -299,12 +362,12 @@ export class DebtLedger {
       jog_penalty: {
         active: this.jogPenaltyActive,
         deadline_timestamp: this.jogPenaltyDeadline
-      }
+      },
+      pending_floor: this.pendingFloorEntry ? {
+        floor_num: this.pendingFloorEntry.floor_num,
+        room_type: this.pendingFloorEntry.room_type
+      } : null
     };
-  }
-
-  public getPlayers(): PlayerInfo[] {
-    return this.players;
   }
 
   public getSquatRatio(): number {
@@ -326,6 +389,7 @@ export class DebtLedger {
     this.playerCount = runData?.player_count || this.players.length || 1;
     this.lastProcessedFloor = 0;
     this.runStatus = 'ACTIVE';
+    this.pendingFloorEntry = null;
 
     this.playerDebts.clear();
     this.playerDeaths.clear();
@@ -419,6 +483,7 @@ export class DebtLedger {
     this.runStatus = saved.run_status;
     this.jogPenaltyActive = saved.jog_penalty?.active || false;
     this.jogPenaltyDeadline = saved.jog_penalty?.deadline_timestamp || null;
+    this.pendingFloorEntry = null;
 
     this.playerDebts.clear();
     this.playerDeaths.clear();

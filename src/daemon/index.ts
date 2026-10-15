@@ -1,4 +1,4 @@
-import http from 'http';
+﻿import http from 'http';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
@@ -147,6 +147,28 @@ app.post('/api/v1/config/ratio', (req, res) => {
   } else {
     res.status(400).json({ error: 'Invalid squat_ratio parameter' });
   }
+});
+
+// 5. POST /api/v1/session/commit-pending - Manually commits the pending floor (e.g. Save & Quit during rewards)
+app.post('/api/v1/session/commit-pending', (_req, res) => {
+  const commitData = ledger.commitPendingFloor();
+  if (commitData) {
+    console.log(`[DAEMON] Manually committed pending floor ${commitData.floor}`);
+    broadcast({
+      type: 'WORKOUT_FLOOR_COMMITTED',
+      timestamp: Date.now(),
+      data: commitData
+    });
+  }
+
+  const currentState = ledger.getFullState();
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'STATE_UPDATE', timestamp: Date.now(), data: currentState }));
+    }
+  });
+
+  res.json({ success: true, commitData, state: currentState });
 });
 
 // WebSocket connection lifecycle

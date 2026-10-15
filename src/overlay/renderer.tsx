@@ -216,6 +216,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCommitPendingFloor = async () => {
+    try {
+      await fetch(`${apiBase}/api/v1/session/commit-pending`, {
+        method: 'POST',
+        headers: customHeaders
+      });
+      fetchState();
+    } catch (e) {
+      console.error('Failed to commit pending floor:', e);
+    }
+  };
+
   // Local player active stats
   const activeDebt = session?.player_debts?.[selectedPlayerIdx] || 0;
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
@@ -234,6 +246,16 @@ const App: React.FC = () => {
 
   return (
     <div style={styles.container}>
+      <style>{`
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        input[type=number] {
+          -moz-appearance: textfield;
+        }
+      `}</style>
       {/* Header Bar with Click Through (Ctrl+Shift+X) & Host IP Switcher */}
       <div style={styles.header}>
         <div style={styles.headerTitle}>
@@ -290,6 +312,17 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {session?.pending_floor && (
+            <div style={styles.pendingFloorBanner}>
+              <span style={{ fontSize: 'clamp(9px, 1.8vh, 11px)', color: '#ecc94b', fontWeight: 'bold' }}>
+                Floor {session.pending_floor.floor_num} rewards pending
+              </span>
+              <button onClick={handleCommitPendingFloor} style={styles.btnCommitPending} title="Commit debt now before closing game">
+                Commit Floor Now
+              </button>
+            </div>
+          )}
+
           <div style={styles.counterBox}>
             <div style={styles.counterLabel}>
               REMAINING WORKOUT COUNT {playerIndices.length > 1 ? `(${getPlayerName(selectedPlayerIdx).toUpperCase()})` : '(YOURS)'}
@@ -300,14 +333,32 @@ const App: React.FC = () => {
           </div>
 
           <div style={styles.actionRow}>
-            <input
-              type="number"
-              min="1"
-              value={repsInput}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepsInput(e.target.value)}
-              style={styles.input}
-              placeholder="Reps"
-            />
+            <div style={styles.stepperContainer}>
+              <button
+                type="button"
+                onClick={() => setRepsInput((prev) => String(Math.max(1, (parseInt(prev, 10) || 1) - 1)))}
+                style={styles.btnStepper}
+                title="Decrease reps"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min="1"
+                value={repsInput}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepsInput(e.target.value)}
+                style={styles.stepperInput}
+                placeholder="Reps"
+              />
+              <button
+                type="button"
+                onClick={() => setRepsInput((prev) => String((parseInt(prev, 10) || 0) + 1))}
+                style={styles.btnStepper}
+                title="Increase reps"
+              >
+                +
+              </button>
+            </div>
             <button onClick={() => handleResolveReps('CUSTOM_ENTRY', 'pushups')} style={styles.btnPrimary}>
               Log Push-ups
             </button>
@@ -608,6 +659,62 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#fff',
     fontSize: 'clamp(10px, 2.2vh, 13px)'
+  },
+  stepperContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '4px',
+    border: '1px solid rgba(255, 255, 255, 0.25)',
+    overflow: 'hidden'
+  },
+  btnStepper: {
+    width: 'clamp(24px, 5vh, 32px)',
+    height: '100%',
+    minHeight: '26px',
+    background: 'rgba(255, 255, 255, 0.15)',
+    border: 'none',
+    color: '#fff',
+    fontSize: 'clamp(14px, 3vh, 18px)',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    userSelect: 'none',
+    transition: 'background 0.15s ease'
+  } as React.CSSProperties,
+  stepperInput: {
+    width: 'clamp(36px, 9vw, 52px)',
+    height: '100%',
+    border: 'none',
+    background: 'transparent',
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 'clamp(11px, 2.3vh, 14px)',
+    fontWeight: 'bold',
+    padding: '0 2px',
+    outline: 'none'
+  } as React.CSSProperties,
+  pendingFloorBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 'clamp(3px, 0.8vh, 6px) clamp(6px, 1.2vw, 10px)',
+    background: 'rgba(236, 201, 75, 0.15)',
+    border: '1px solid rgba(236, 201, 75, 0.4)',
+    borderRadius: '4px',
+    marginBottom: '6px'
+  },
+  btnCommitPending: {
+    background: '#d69e2e',
+    color: '#1a202c',
+    border: 'none',
+    borderRadius: '3px',
+    padding: '2px 8px',
+    fontSize: 'clamp(9px, 1.8vh, 11px)',
+    fontWeight: 'bold',
+    cursor: 'pointer'
   },
   select: {
     padding: '2px 6px',
