@@ -1,4 +1,4 @@
-﻿import {
+import {
   RawRunSaveData,
   RawFloorEntry,
   PlayerFloorReport,
@@ -99,7 +99,7 @@ export class DebtLedger {
     // Check if the current processed floor had reward healing (e.g. potion or relic healing during rewards)
     if (this.lastProcessedFloor > 0 && sortedFloors.length > 0) {
       const currentFloorEntry = sortedFloors.find((f) => f && f.floor_num === this.lastProcessedFloor);
-      if (currentFloorEntry) {
+      if (currentFloorEntry && ['monster', 'elite', 'boss'].includes(currentFloorEntry.room_type)) {
         for (const metric of currentFloorEntry.player_metrics) {
           const pIdx = metric.player_index;
           const hist = this.persistence.getHistoryStore();

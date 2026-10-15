@@ -169,6 +169,18 @@ const App: React.FC = () => {
 
   // REST Action Handlers
   const handleResolveReps = async (actionType: 'CUSTOM_ENTRY' | 'ALL_PUSHUPS' | 'ALL_SQUATS', exercise?: 'pushups' | 'squats') => {
+    if (actionType === 'ALL_PUSHUPS') {
+      if (activeDebt <= 0) return;
+      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${activeDebt} Push-ups?`)) {
+        return;
+      }
+    } else if (actionType === 'ALL_SQUATS') {
+      if (activeDebt <= 0) return;
+      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${activeDebt * ratio} Squats?`)) {
+        return;
+      }
+    }
+
     const val = parseInt(repsInput, 10) || 0;
     try {
       await fetch(`${apiBase}/api/v1/workout/resolve`, {
@@ -640,7 +652,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 'clamp(4px, 1vw, 8px)',
     marginBottom: 'clamp(2px, 0.5vh, 6px)',
-    minHeight: '26px'
+    minHeight: '32px'
   },
   input: {
     width: 'clamp(50px, 18%, 80px)',
@@ -655,18 +667,18 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     background: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: '4px',
+    borderRadius: '6px',
     border: '1px solid rgba(255, 255, 255, 0.25)',
     overflow: 'hidden'
   },
   btnStepper: {
-    width: 'clamp(24px, 5vh, 32px)',
+    width: 'clamp(34px, 7vh, 46px)',
     height: '100%',
-    minHeight: '26px',
-    background: 'rgba(255, 255, 255, 0.15)',
+    minHeight: '32px',
+    background: 'rgba(255, 255, 255, 0.18)',
     border: 'none',
     color: '#fff',
-    fontSize: 'clamp(14px, 3vh, 18px)',
+    fontSize: 'clamp(18px, 4vh, 24px)',
     fontWeight: 'bold',
     cursor: 'pointer',
     display: 'flex',

@@ -1,4 +1,4 @@
-﻿import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetric } from '../shared/types';
+import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetric } from '../shared/types';
 import { getCombatDeathInfoFromLog, CombatDeathInfo } from './logReader';
 
 export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj?: any): string {
@@ -53,6 +53,15 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
  * Supports on-demand enrichment from godot.log to detect mid-combat deaths and turn counts.
  */
 export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string): RawRunSaveData {
+  if (typeof raw === 'string') {
+    try {
+      const sanitized = raw.replace(/"(player_id|net_id|steam_id|account_id|id)":\s*(\d{15,})/g, '"$1": "$2"');
+      raw = JSON.parse(sanitized);
+    } catch {
+      // fallback
+    }
+  }
+
   if (!raw || typeof raw !== 'object') {
     return {
       run_id: `run_${Date.now()}`,
@@ -159,10 +168,19 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
           const rawPlayerObj = (raw.players && raw.players[p.index]) || raw.players?.[0];
           const playerNetId = typeof rawPlayerObj?.net_id === 'number' ? rawPlayerObj.net_id : null;
 
+          const rawPlayerIds = [
+            rawPlayerObj?.steam_id,
+            rawPlayerObj?.account_id,
+            rawPlayerObj?.id,
+            rawPlayerObj?.net_id,
+            p.index,
+            p.index + 1
+          ].filter((v) => v !== undefined && v !== null && v !== '').map(String);
+
           const stat = playerStats.find((s: any) => {
-            if (typeof s.player_id === 'number') {
-              if (playerNetId !== null && s.player_id === playerNetId) return true;
-              return s.player_id === (p.index + 1) || s.player_id === p.index;
+            if (s && s.player_id !== undefined && s.player_id !== null) {
+              const sPid = String(s.player_id);
+              return rawPlayerIds.includes(sPid);
             }
             return false;
           }) || playerStats[p.index] || playerStats[0];
@@ -210,7 +228,10 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             rawPlayerObj?.account_id,
             rawPlayerObj?.id,
             rawPlayerObj?.net_id,
-            stat?.player_id
+            stat?.player_id,
+            rawPlayerObj?.character,
+            rawPlayerObj?.character_id,
+            p.character
           ].filter((v) => v !== undefined && v !== null && v !== '').map(String);
 
           const isDiedFromLog = Boolean(
@@ -230,9 +251,15 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             }
           }
 
+          const isDeadByHp = isCombat && (
+            (typeof stat?.current_hp === 'number' && stat.current_hp === 0) ||
+            hp_end === 0
+          );
+
           const died_this_floor = Boolean(
             stat?.died ||
             stat?.died_this_floor ||
+            isDeadByHp ||
             isDiedFromLog
           );
 

@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import chokidar from 'chokidar';
@@ -186,7 +186,10 @@ export class SaveWatcher {
     this.lastSHA256 = hash;
 
     try {
-      const raw = JSON.parse(content);
+      // Pre-sanitize 64-bit integer IDs (15+ digits) into strings to prevent JavaScript IEEE 754 precision loss
+      // (e.g. Steam ID 76561199390189279 getting rounded to 76561199390189280)
+      const sanitized = content.replace(/"(player_id|net_id|steam_id|account_id|id)":\s*(\d{15,})/g, '"$1": "$2"');
+      const raw = JSON.parse(sanitized);
       if (raw && (typeof raw.start_time === 'number' || typeof raw.start_time === 'string')) {
         this.activeStartTime = raw.start_time;
       }
