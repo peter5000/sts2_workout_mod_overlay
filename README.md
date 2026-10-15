@@ -27,87 +27,104 @@
 
 ## 🚀 Getting Started
 
-### Prerequisites
-* **Node.js**: v18.0.0 or higher
-* **npm**: v9.0.0 or higher
+Choose your role to jump straight to the relevant setup guide:
+* 👑 **If you are the Host** (hosting the game lobby / owning the save file): **[Start here](#host-setup)**
+* 🎮 **If you are Joining** (co-op party member connecting remotely): **[Start here](#joiner-setup)**
 
-### Installation
+---
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/sts2_workout_mod_overlay.git
-   cd sts2_workout_mod_overlay
-   ```
+### 📦 Prerequisites & System Dependencies
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+Before running the overlay, ensure your system has the following installed:
 
-3. **Configure Environment:**
+1. **Git**: [Download Git](https://git-scm.com/) (required to clone and update the repository)
+2. **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
+   * Verify installation in your terminal:
+     ```bash
+     node -v
+     npm -v
+     ```
+3. **Python 3** *(Optional)*: [Download Python](https://www.python.org/) (recommended on Windows in case native dependencies require build tools)
+
+---
+
+### 📥 1. Common Installation (Everyone)
+
+Both the Host and Joiners need to clone the repository and install dependencies:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
+cd sts2_workout_mod_overlay
+
+# 2. Install dependencies
+npm install
+
+# 3. Build the overlay & daemon bundle
+npm run build
+```
+
+---
+
+<a id="host-setup"></a>
+### 👑 2. Host Setup Guide
+
+The host's PC runs Slay the Spire 2, monitors save checkpoints, and hosts the workout relay daemon.
+
+1. **Configure Environment:**
    Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
    ```
-   *(Optionally specify `STS2_SAVE_DIR` if your save files are located in a custom directory).*
+   *(Optional: Edit `STS2_SAVE_DIR` in `.env` if your StS2 saves are in a custom path).*
+
+2. **One-Time ngrok Setup** (to let teammates connect securely):
+   * Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup).
+   * Copy your authtoken from [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken).
+   * Register your token locally (one-time command, stored in your user profile):
+     ```bash
+     npx ngrok config add-authtoken YOUR_AUTHTOKEN_HERE
+     ```
+
+3. **Launch Session (3 Terminals):**
+   * **Terminal 1 — Start the Save Daemon:**
+     ```bash
+     npm run start:daemon
+     ```
+   * **Terminal 2 — Open Public Tunnel:**
+     ```bash
+     npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
+     ```
+     *Copy the `https://<something>.ngrok-free.app` forwarding URL printed by ngrok and share it with your co-op teammates.*
+   * **Terminal 3 — Launch Your HUD Overlay:**
+     ```bash
+     npm run start:overlay
+     ```
 
 ---
 
-## 👥 Who Runs What
+<a id="joiner-setup"></a>
+### 🎮 3. Joiner Setup Guide
 
-| Role | Runs daemon | Runs ngrok | Runs overlay |
-|------|:-----------:|:----------:|:------------:|
-| **Host** (the player whose PC hosts the StS2 co-op lobby / owns the save file) | ✅ | ✅ | ✅ |
-| **Joiner** (everyone else) | ❌ | ❌ | ✅ |
+Joiners do **not** need to touch save files or run any background daemons or ngrok tunnels. You only run the transparent overlay HUD and connect to the Host.
 
-Only the **host** reads the save file, so only the host needs the daemon and the ngrok tunnel.
-Joiners only run the overlay and point it at the host's ngrok URL.
-
-### Build (everyone)
-```bash
-git pull
-npm install
-npm run build
-```
-
-### Host
-```bash
-# Terminal 1 – daemon (watches the save file, serves REST + WebSocket on :8765)
-npm run start:daemon
-
-# Terminal 2 – public tunnel to the daemon (see ngrok setup below)
-npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
-
-# Terminal 3 – your own overlay
-npm run start:overlay
-```
-Send the `https://<something>.ngrok-free.app` forwarding URL ngrok prints to your joiners.
-
-### Joiner
-```bash
-npm run start:overlay
-```
-Then enter the host's ngrok URL (e.g. `https://example-1234.ngrok-free.app`) in the overlay's host field.
+1. **Launch Your Overlay:**
+   ```bash
+   npm run start:overlay
+   ```
+2. **Connect to Host:**
+   * In the top header bar of the overlay, click the **Host IP / Connection** badge (e.g. `🌐 127.0.0.1:8765`).
+   * Enter the Host's ngrok forwarding URL (e.g. `https://example-1234.ngrok-free.app`).
+   * Click **Save & Reconnect**. The indicator turns green (`🌐 Connected`) and will automatically sync live run metrics and workout debt!
 
 ---
 
-## 🌐 ngrok Setup (host only, one time)
+### 👥 Who Runs What Summary
 
-1. **Sign up** for a free account at <https://dashboard.ngrok.com/signup>.
-2. Copy your authtoken from <https://dashboard.ngrok.com/get-started/your-authtoken>.
-3. Register it locally (stored in your user ngrok config, **not** in this repo):
-   ```bash
-   npx ngrok config add-authtoken 2abcEXAMPLEtoken_0123456789abcdefEXAMPLE
-   ```
-4. Start the tunnel. The `--response-header-add` flag suppresses ngrok's free-tier
-   browser-warning interstitial, which otherwise breaks the overlay's API/WebSocket calls:
-   ```bash
-   npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
-   ```
-5. ngrok prints a forwarding URL such as `https://example-1234.ngrok-free.app` — share that with joiners.
-   On the free plan the URL changes every time ngrok restarts, so re-share it after restarts.
-
-> ⚠️ Never commit your authtoken or your personal ngrok URL.
+| Role | Runs daemon (`npm run start:daemon`) | Runs ngrok tunnel | Runs overlay (`npm run start:overlay`) |
+|------|:------------------------------------:|:-----------------:|:-------------------------------------:|
+| **👑 Host** (owns lobby / save file) | ✅ | ✅ | ✅ |
+| **🎮 Joiner** (party member) | ❌ | ❌ | ✅ |
 
 ---
 
