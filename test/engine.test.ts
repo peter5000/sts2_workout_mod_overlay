@@ -4,6 +4,7 @@ import { PersistenceManager } from '../src/daemon/persistence';
 import { RawRunSaveData, RawFloorEntry } from '../src/shared/types';
 import fs from 'fs';
 import path from 'path';
+import { runLogReaderTests } from './logReader.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -14,6 +15,7 @@ function assert(condition: boolean, message: string) {
 
 function runTests() {
   console.log('🧪 Running Engine Unit Tests...');
+  runLogReaderTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
@@ -230,6 +232,133 @@ function runTests() {
   assert(multiLedger.getFullState().player_aggregates[0].pushups === 10, 'SP pushups should be restored to 10');
 
   console.log('  ✓ Multi-run active session switching and state persistence verified');
+
+  // 6. Test 1-HP Revive Mid-Combat Death & Turn Freezing (Phantasmal Gardeners real case)
+  // Player had 42 HP, took 41 dmg, died on turn 7. Teammate won on turn 11. Player revived to 1 HP.
+  const reviveFloorData: RawFloorEntry = {
+    floor_num: 12,
+    room_type: 'elite',
+    total_combat_turns: 11,
+    player_metrics: [
+      { player_index: 0, player_name: 'DeadRevivedPlayer', hp_start: 42, hp_end: 1, died_this_floor: true, death_turn: 7 },
+      { player_index: 1, player_name: 'SurvivingTeammate', hp_start: 55, hp_end: 38, died_this_floor: false, death_turn: null }
+    ]
+  };
+
+  const reviveDeaths = new Map<number, number>([[0, 0], [1, 0]]);
+  const reviveDebts = new Map<number, number>([[0, 0], [1, 0]]);
+  const reviveAggs = new Map<number, { accrued: number; pushups: number; squats: number }>();
+  const reviveReports = FloorParser.parseFloor(reviveFloorData, reviveDeaths, reviveDebts, reviveAggs, 2);
+
+  // DeadRevivedPlayer: frozen at 7 turns, 41 HP lost. wc = 7 * (2 + 0) + 41 = 14 + 41 = 55 wc (NOT 11 * 2 + 41 = 63)
+  assert(reviveReports[0].evaluation.turns_taken_n === 7, `DeadRevivedPlayer turns should be frozen at 7, got ${reviveReports[0].evaluation.turns_taken_n}`);
+  assert(reviveReports[0].evaluation.counters_added === 55, `DeadRevivedPlayer wc should be 55, got ${reviveReports[0].evaluation.counters_added}`);
+  assert(reviveReports[0].evaluation.deaths_accumulated_d === 1, `DeadRevivedPlayer death count should increment to 1`);
+
+  // Subsequent floor: death penalty applies (2 + 1) = 3
+  const nextFloorData: RawFloorEntry = {
+    floor_num: 13,
+    room_type: 'monster',
+    total_combat_turns: 4,
+    player_metrics: [
+      { player_index: 0, player_name: 'DeadRevivedPlayer', hp_start: 1, hp_end: 1, died_this_floor: false, death_turn: null },
+      { player_index: 1, player_name: 'SurvivingTeammate', hp_start: 38, hp_end: 35, died_this_floor: false, death_turn: null }
+    ]
+  };
+  const nextReports = FloorParser.parseFloor(nextFloorData, reviveDeaths, reviveDebts, reviveAggs, 2);
+  // wc = 4 * (2 + 1) + 0 = 12
+  assert(nextReports[0].evaluation.counters_added === 12, `Subsequent floor wc should be 12 (4 * 3), got ${nextReports[0].evaluation.counters_added}`);
+
+  console.log('  ✓ 1-HP revive mid-combat death and subsequent floor penalty verified');
+
+  // 7. Test Delayed Commit Lifecycle & Manual Commit
+  const delayedLedger = new DebtLedger(testPersistence);
+  const floor1: RawFloorEntry = {
+    floor_num: 1,
+    room_type: 'event',
+    total_combat_turns: 0,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 80, died_this_floor: false, death_turn: null }]
+  };
+  const floor2: RawFloorEntry = {
+    floor_num: 2,
+    room_type: 'monster',
+    total_combat_turns: 3,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 70, died_this_floor: false, death_turn: null }]
+  };
+  const floor3: RawFloorEntry = {
+    floor_num: 3,
+    room_type: 'monster',
+    total_combat_turns: 4,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 70, hp_end: 60, died_this_floor: false, death_turn: null }]
+  };
+
+  // Step A: Floors 1 & 2 present. Floor 1 committed, Floor 2 pending rewards.
+  delayedLedger.processSaveData({
+    run_id: 'run_delayed_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2]
+  });
+  let delayedState = delayedLedger.getFullState();
+  assert(delayedState.pending_floor?.floor_num === 2, `Floor 2 should be pending rewards, got ${delayedState.pending_floor?.floor_num}`);
+  assert(delayedState.player_debts[0] === 0, `Debt should be 0 because Floor 2 is not committed yet, got ${delayedState.player_debts[0]}`);
+
+  // Step B: Player moves to Floor 3 -> Floor 2 is committed, Floor 3 is pending!
+  // Floor 2 debt: 3 turns * 2 + 10 dmg = 16 wc.
+  delayedLedger.processSaveData({
+    run_id: 'run_delayed_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2, floor3]
+  });
+  delayedState = delayedLedger.getFullState();
+  assert(delayedState.pending_floor?.floor_num === 3, `Floor 3 should be pending rewards, got ${delayedState.pending_floor?.floor_num}`);
+  assert(delayedState.player_debts[0] === 16, `Debt should be 16 from committed Floor 2, got ${delayedState.player_debts[0]}`);
+
+  // Step C: Player saves & quits mid-rewards on Floor 3 -> triggers manual commitPendingFloor()
+  // Floor 3 debt: 4 turns * 2 + 10 dmg = 18 wc. Total debt: 16 + 18 = 34 wc.
+  const manualCommit = delayedLedger.commitPendingFloor();
+  assert(manualCommit !== null && manualCommit.floor === 3, 'Manual commit should commit floor 3');
+  delayedState = delayedLedger.getFullState();
+  assert(delayedState.pending_floor === null, 'Pending floor should be cleared after manual commit');
+  assert(delayedState.player_debts[0] === 34, `Debt should be 34 after manual commit of Floor 3, got ${delayedState.player_debts[0]}`);
+
+  // Step D: Re-sending Floor 3 does not duplicate debt
+  delayedLedger.processSaveData({
+    run_id: 'run_delayed_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2, floor3]
+  });
+  assert(delayedLedger.getFullState().player_debts[0] === 34, 'Debt must not duplicate on save rescan');
+
+  // Step E: Final boss victory floor -> commits immediately
+  const bossFloor: RawFloorEntry = {
+    floor_num: 4,
+    room_type: 'boss',
+    total_combat_turns: 5,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 60, hp_end: 45, died_this_floor: false, death_turn: null }]
+  };
+  // Boss debt: 5 turns * 2 + 15 dmg = 25 wc. Total: 34 + 25 = 59 wc.
+  delayedLedger.processSaveData({
+    run_id: 'run_delayed_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'VICTORY',
+    floors: [floor1, floor2, floor3, bossFloor]
+  });
+  delayedState = delayedLedger.getFullState();
+  assert(delayedState.player_debts[0] === 59, `Debt should be 59 on VICTORY terminal commit, got ${delayedState.player_debts[0]}`);
+  assert(delayedState.pending_floor === null, 'No pending floor on terminal run');
+
+  console.log('  ✓ Delayed commit lifecycle, manual commit button, and final boss victory commit verified');
 
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

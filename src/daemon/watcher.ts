@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import chokidar from 'chokidar';
@@ -14,6 +14,8 @@ export class SaveWatcher {
   private debounceTimer: NodeJS.Timeout | null = null;
   private isProcessing: boolean = false;
   private callback: SaveFileChangeCallback;
+  private activeStartTime: number | string | null = null;
+  private activeRunId: string | null = null;
 
   constructor(targetDir: string, callback: SaveFileChangeCallback) {
     this.targetDir = targetDir;
@@ -48,7 +50,7 @@ export class SaveWatcher {
         console.log(`[SAVE WATCHER] Active save removed (${fileName}). Checking history directory for completed run...`);
         setTimeout(() => {
           this.checkLatestHistoryRun();
-        }, 300);
+        }, 150);
       }
     };
 
@@ -91,11 +93,28 @@ export class SaveWatcher {
     }
   }
 
-  private checkLatestHistoryRun(): void {
+  private async checkLatestHistoryRun(): Promise<void> {
     const historyDir = path.join(this.targetDir, 'history');
     if (!fs.existsSync(historyDir)) return;
 
     try {
+      // 1. If we know the active run's start_time, specifically look for <start_time>.run
+      if (this.activeStartTime) {
+        const targetedFile = path.join(historyDir, `${this.activeStartTime}.run`);
+        const retryDelays = [50, 150, 300];
+        for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+          if (fs.existsSync(targetedFile)) {
+            console.log(`[SAVE WATCHER] Ingesting targeted run history file: ${targetedFile}`);
+            this.scheduleDebouncedRead(targetedFile);
+            return;
+          }
+          if (attempt < retryDelays.length) {
+            await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+          }
+        }
+      }
+
+      // 2. Fallback to newest .run file by mtime if targeted file not found
       const files = fs.readdirSync(historyDir)
         .filter((f) => f.endsWith('.run') || (f.endsWith('.save') && !f.startsWith('prefs') && !f.startsWith('progress')))
         .map((f) => path.join(historyDir, f))
@@ -168,7 +187,11 @@ export class SaveWatcher {
 
     try {
       const raw = JSON.parse(content);
+      if (raw && (typeof raw.start_time === 'number' || typeof raw.start_time === 'string')) {
+        this.activeStartTime = raw.start_time;
+      }
       const parsed = normalizeSaveData(raw);
+      this.activeRunId = parsed.run_id;
       console.log(`[SAVE WATCHER] Parsed save checkpoint update for run_id: ${parsed.run_id}`);
       this.callback(parsed);
     } catch (err) {

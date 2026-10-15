@@ -1,4 +1,4 @@
-// Slay the Spire 2 Workout Mode Overlay - Shared Types & Data Contracts
+﻿// Slay the Spire 2 Workout Mode Overlay - Shared Types & Data Contracts
 
 export interface PlayerInfo {
   index: number;
@@ -24,6 +24,10 @@ export interface ActiveSessionStore {
     active: boolean;
     deadline_timestamp: number | null;
   };
+  pending_floor?: {
+    floor_num: number;
+    room_type: RoomType;
+  } | null;
 }
 
 export type RoomType = 'monster' | 'elite' | 'boss' | 'event' | 'campfire' | 'shop' | 'rest';
@@ -129,7 +133,13 @@ export interface RunTerminatedEvent {
   };
 }
 
-export type WebSocketMessage = RunDetectedEvent | FloorCommittedEvent | RunTerminatedEvent;
+export interface StateUpdateEvent {
+  type: 'STATE_UPDATE';
+  timestamp: number;
+  data: ActiveSessionStore;
+}
+
+export type WebSocketMessage = RunDetectedEvent | FloorCommittedEvent | RunTerminatedEvent | StateUpdateEvent;
 
 // REST API Contracts
 export type RepResolutionAction = 'CUSTOM_ENTRY' | 'ALL_PUSHUPS' | 'ALL_SQUATS';

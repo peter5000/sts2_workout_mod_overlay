@@ -1,4 +1,5 @@
-import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetric } from '../shared/types';
+﻿import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetric } from '../shared/types';
+import { getCombatDeathInfoFromLog, CombatDeathInfo } from './logReader';
 
 export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj?: any): string {
   // 1. Check ID from raw player object (steam_id, account_id, id, net_id, player_id)
@@ -37,9 +38,11 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
 /**
  * Normalizes raw save data from either:
  * 1) Standard RawRunSaveData (e.g., sample JSON payloads)
- * 2) Native Slay the Spire 2 Godot save format (e.g., current_run.save or history .run files)
+ * 2) Native Slay the Spire 2 Godot save format (e.g., current_run.save, current_run_mp.save, or history .run files)
+ * 
+ * Supports on-demand enrichment from godot.log to detect mid-combat deaths and turn counts.
  */
-export function normalizeSaveData(raw: any): RawRunSaveData {
+export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string): RawRunSaveData {
   if (!raw || typeof raw !== 'object') {
     return {
       run_id: `run_${Date.now()}`,
@@ -71,13 +74,7 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
   }
 
   // Handle native StS2 Godot save format (current_run.save)
-  const seed = raw.seed || raw.players?.[0]?.rng?.seed || '0';
   const startTime = raw.start_time || Date.now();
-  // NOTE: key on start_time only. current_run.save has no top-level seed while the
-  // history .run file does; including the seed made the two IDs differ, so on defeat
-  // the ledger treated the history file as a brand-new run (Panel B reset to 0 and the
-  // losing combat's counters landed in an orphan session).
-  void seed;
   const run_id = raw.run_id || `run_${startTime}`;
 
   const is_multiplayer = typeof raw.is_multiplayer === 'boolean'
@@ -104,6 +101,17 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
     run_status = 'VICTORY';
   } else if (raw.run_status === 'DEFEAT' || raw.killed_by_encounter || raw.was_abandoned) {
     run_status = 'DEFEAT';
+  }
+
+  // Resolve combat log info on demand if available
+  let logInfo: CombatDeathInfo | null = null;
+  if (logSource && typeof logSource === 'object' && 'diedPlayers' in logSource) {
+    logInfo = logSource as CombatDeathInfo;
+  } else if (typeof logSource === 'string') {
+    logInfo = getCombatDeathInfoFromLog(logSource);
+  } else {
+    // Attempt reading from default godot.log location
+    logInfo = getCombatDeathInfoFromLog();
   }
 
   const floors: RawFloorEntry[] = [];
@@ -134,7 +142,9 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
           ? mp.rooms[0].turns_taken
           : 0;
 
+        const isCombat = ['monster', 'elite', 'boss'].includes(room_type);
         const playerStats = Array.isArray(mp.player_stats) ? mp.player_stats : [];
+
         const player_metrics: RawPlayerFloorMetric[] = players.map((p) => {
           const rawPlayerObj = (raw.players && raw.players[p.index]) || raw.players?.[0];
           const playerNetId = typeof rawPlayerObj?.net_id === 'number' ? rawPlayerObj.net_id : null;
@@ -151,12 +161,10 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
           const rawCurrentHp = typeof rawPlayerObj?.current_hp === 'number' ? rawPlayerObj.current_hp : 0;
           const statHasHp = stat && typeof stat.current_hp === 'number';
           const statMaxHp = stat && typeof stat.max_hp === 'number' ? stat.max_hp : 0;
-          // Player is dead on this floor: stat reports 0 HP after taking damage in a combat
-          const zeroHpDeath = Boolean(statHasHp && statMaxHp > 0 && stat.current_hp <= 0 && (stat.damage_taken || 0) > 0);
 
           let endHp = (statHasHp && stat.current_hp > 0)
             ? stat.current_hp
-            : (isLastFloor && rawCurrentHp > 0 && !zeroHpDeath ? rawCurrentHp : 0);
+            : (isLastFloor && rawCurrentHp > 0 ? rawCurrentHp : 0);
 
           // Initialize HP at start of floor 1:
           // Ignore Weary Traveler starting penalty (baseline to spawn HP, not max HP),
@@ -172,18 +180,46 @@ export function normalizeSaveData(raw: any): RawRunSaveData {
           }
 
           const hp_start = playerPrevHp[p.index] as number;
-          const hp_end = zeroHpDeath ? 0 : (endHp > 0 ? endHp : hp_start);
+          const hp_end = endHp > 0 ? endHp : (statHasHp && stat.current_hp === 0 ? 0 : hp_start);
 
           // Update tracking for entry into next floor
-          playerPrevHp[p.index] = hp_end > 0 ? hp_end : hp_start;
+          playerPrevHp[p.index] = hp_end;
+
+          // Check if player died during this floor from log reader
+          const candidateIds = [
+            rawPlayerObj?.steam_id,
+            rawPlayerObj?.account_id,
+            rawPlayerObj?.id,
+            rawPlayerObj?.net_id,
+            stat?.player_id
+          ].filter((v) => v !== undefined && v !== null && v !== '').map(String);
+
+          const isDiedFromLog = Boolean(
+            isLastFloor &&
+            isCombat &&
+            logInfo &&
+            candidateIds.some((id) => logInfo!.diedPlayers.has(id))
+          );
+
+          let logDeathTurn: number | null = null;
+          if (isDiedFromLog && logInfo) {
+            for (const id of candidateIds) {
+              if (typeof logInfo.deathTurns[id] === 'number') {
+                logDeathTurn = logInfo.deathTurns[id];
+                break;
+              }
+            }
+          }
 
           const died_this_floor = Boolean(
             stat?.died ||
             stat?.died_this_floor ||
-            zeroHpDeath
+            isDiedFromLog
           );
+
           const death_turn = died_this_floor
-            ? (typeof stat?.death_turn === 'number' ? stat.death_turn
+            ? (typeof logDeathTurn === 'number' ? logDeathTurn
+              : typeof stat?.death_turn === 'number' ? stat.death_turn
               : typeof stat?.turn_died === 'number' ? stat.turn_died
               : typeof stat?.turn_of_death === 'number' ? stat.turn_of_death
               : typeof stat?.turns_survived === 'number' ? stat.turns_survived
