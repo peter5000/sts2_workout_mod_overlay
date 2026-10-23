@@ -6,6 +6,8 @@ import { RawRunSaveData, RawFloorEntry } from '../src/shared/types';
 import fs from 'fs';
 import path from 'path';
 import { runLogReaderTests } from './logReader.test';
+import { runRoomTrackingTests } from './roomTracking.test';
+import { runAutoCommitTests } from './autoCommit.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -17,6 +19,8 @@ function assert(condition: boolean, message: string) {
 function runTests() {
   console.log('🧪 Running Engine Unit Tests...');
   runLogReaderTests();
+  runRoomTrackingTests();
+  runAutoCommitTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
