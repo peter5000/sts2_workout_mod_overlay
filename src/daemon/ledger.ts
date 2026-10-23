@@ -48,6 +48,7 @@ export class DebtLedger {
     isNewRun: boolean;
     commitData: FloorCommitData | null;
     terminatedEvent: RunTerminatedEvent | null;
+    rewardStageEntered: { floor: number; room_type: string } | null;
   } {
     let isNewRun = false;
 
@@ -82,6 +83,7 @@ export class DebtLedger {
     });
 
     let commitData: FloorCommitData | null = null;
+    let rewardStageEntered: { floor: number; room_type: string } | null = null;
 
     // Parse unprocessed floors sequentially
     const sortedFloors = [...safeFloors].sort((a, b) => (a.floor_num || 0) - (b.floor_num || 0));
@@ -187,6 +189,10 @@ export class DebtLedger {
 
         if (isRewardStageNow) {
           // REWARD STAGE of combat encounter:
+          rewardStageEntered = {
+            floor: floorEntry.floor_num,
+            room_type: floorEntry.room_type
+          };
           // Make floor debt pending so players can review and choose to commit early during rewards
           this.pendingFloorEntry = floorEntry;
           this.pendingPlayerFloors.clear();
@@ -250,7 +256,7 @@ export class DebtLedger {
 
     this.persistCurrentState();
 
-    return { isNewRun, commitData, terminatedEvent };
+    return { isNewRun, commitData, terminatedEvent, rewardStageEntered };
   }
 
   public commitPendingFloor(playerIndex?: number): FloorCommitData | null {

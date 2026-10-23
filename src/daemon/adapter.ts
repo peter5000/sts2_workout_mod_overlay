@@ -234,7 +234,9 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             stat?.player_id,
             rawPlayerObj?.character,
             rawPlayerObj?.character_id,
-            p.character
+            p.character,
+            p.index,
+            p.index + 1
           ].filter((v) => v !== undefined && v !== null && v !== '').map(String);
 
           const isDiedFromLog = Boolean(
@@ -254,25 +256,14 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             }
           }
 
-          const isDeadByHp = isCombat && (
-            (typeof stat?.current_hp === 'number' && stat.current_hp === 0) ||
-            hp_end === 0
-          );
-
-          const died_this_floor = Boolean(
-            stat?.died ||
-            stat?.died_this_floor ||
-            isDeadByHp ||
-            isDiedFromLog
-          );
+          // Death detection is SOLELY based on godot.log engine events:
+          // In StS2, true player death logs 'Player X died, doing death handling'.
+          // Fairy in a Bottle and Lizard Tail mid-combat revives do NOT log death handling and do NOT count as deaths.
+          // Save file HP stats are NOT used for death detection (prevents false positives from uninitialized reward screens).
+          const died_this_floor = isDiedFromLog;
 
           const death_turn = died_this_floor
-            ? (typeof logDeathTurn === 'number' ? logDeathTurn
-              : typeof stat?.death_turn === 'number' ? stat.death_turn
-              : typeof stat?.turn_died === 'number' ? stat.turn_died
-              : typeof stat?.turn_of_death === 'number' ? stat.turn_of_death
-              : typeof stat?.turns_survived === 'number' ? stat.turns_survived
-              : total_combat_turns)
+            ? (typeof logDeathTurn === 'number' ? logDeathTurn : total_combat_turns)
             : null;
 
           return {
@@ -289,7 +280,8 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
           floor_num: globalFloorNum,
           room_type,
           total_combat_turns,
-          player_metrics
+          player_metrics,
+          log_parsed: isLastFloor && isCombat ? Boolean(logInfo?.success) : undefined
         });
       });
     });

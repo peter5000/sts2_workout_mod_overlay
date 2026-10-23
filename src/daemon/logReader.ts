@@ -1,7 +1,9 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 
 export interface CombatDeathInfo {
+  success: boolean;
+  logFound: boolean;
   diedPlayers: Set<string>;
   deathTurns: Record<string, number>;
   playerLastTurns: Record<string, number>;
@@ -57,6 +59,8 @@ export function parseCombatSlice(sliceText: string): CombatDeathInfo {
   }
 
   return {
+    success: true,
+    logFound: true,
     diedPlayers,
     deathTurns,
     playerLastTurns,
@@ -67,7 +71,9 @@ export function parseCombatSlice(sliceText: string): CombatDeathInfo {
 export function getCombatDeathInfoFromLog(logPath?: string): CombatDeathInfo {
   const targetPath = logPath || getDefaultGodotLogPath();
 
-  const emptyResult: CombatDeathInfo = {
+  const notFoundResult: CombatDeathInfo = {
+    success: false,
+    logFound: false,
     diedPlayers: new Set<string>(),
     deathTurns: {},
     playerLastTurns: {},
@@ -75,22 +81,31 @@ export function getCombatDeathInfoFromLog(logPath?: string): CombatDeathInfo {
   };
 
   if (!fs.existsSync(targetPath)) {
-    return emptyResult;
+    return notFoundResult;
   }
+
+  const parseFailedResult: CombatDeathInfo = {
+    success: false,
+    logFound: true,
+    diedPlayers: new Set<string>(),
+    deathTurns: {},
+    playerLastTurns: {},
+    maxCombatTurn: 0
+  };
 
   try {
     let fd: number | null = null;
     try {
       fd = fs.openSync(targetPath, 'r');
     } catch {
-      return emptyResult;
+      return parseFailedResult;
     }
 
     const stats = fs.fstatSync(fd);
     const fileSize = stats.size;
     if (fileSize === 0) {
       fs.closeSync(fd);
-      return emptyResult;
+      return parseFailedResult;
     }
 
     const chunkSteps = [256 * 1024, 512 * 1024, 1024 * 1024, 2048 * 1024];
@@ -119,12 +134,12 @@ export function getCombatDeathInfoFromLog(logPath?: string): CombatDeathInfo {
     fs.closeSync(fd);
 
     if (!combatSliceText) {
-      return emptyResult;
+      return parseFailedResult;
     }
 
     return parseCombatSlice(combatSliceText);
   } catch (err) {
     console.error('[LOG READER ERROR] Failed to parse combat death info from log:', err);
-    return emptyResult;
+    return parseFailedResult;
   }
 }

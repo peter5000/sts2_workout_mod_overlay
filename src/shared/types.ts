@@ -61,6 +61,7 @@ export interface RawFloorEntry {
   room_type: RoomType;
   total_combat_turns: number;
   player_metrics: RawPlayerFloorMetric[];
+  log_parsed?: boolean;
 }
 
 export interface RawRunSaveData {

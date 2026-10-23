@@ -45,7 +45,7 @@ function broadcast(message: WebSocketMessage): void {
 
 // Save Watcher callback handler
 const watcher = new SaveWatcher(saveDir, (saveData) => {
-  const { isNewRun, commitData, terminatedEvent } = ledger.processSaveData(saveData);
+  const { isNewRun, commitData, terminatedEvent, rewardStageEntered } = ledger.processSaveData(saveData);
 
   if (isNewRun) {
     const runDetectedMsg: RunDetectedEvent = {
@@ -63,6 +63,10 @@ const watcher = new SaveWatcher(saveDir, (saveData) => {
     broadcast(runDetectedMsg);
   }
 
+  if (rewardStageEntered) {
+    console.log(`[DAEMON] Floor ${rewardStageEntered.floor} combat ended (${rewardStageEntered.room_type}). Reward stage active — pending commit.`);
+  }
+
   if (commitData) {
     console.log(`[DAEMON] Broadcasting WORKOUT_FLOOR_COMMITTED for floor ${commitData.floor}`);
     broadcast({
@@ -76,6 +80,14 @@ const watcher = new SaveWatcher(saveDir, (saveData) => {
     console.log(`[DAEMON] Broadcasting RUN_TERMINATED outcome: ${terminatedEvent.data.outcome}`);
     broadcast(terminatedEvent);
   }
+
+  // Always broadcast updated session state to all HUD overlay WebSocket clients on every save checkpoint update
+  const currentState = ledger.getFullState();
+  broadcast({
+    type: 'STATE_UPDATE',
+    timestamp: Date.now(),
+    data: currentState
+  });
 });
 
 // REST API Endpoints

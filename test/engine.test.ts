@@ -8,6 +8,8 @@ import path from 'path';
 import { runLogReaderTests } from './logReader.test';
 import { runRoomTrackingTests } from './roomTracking.test';
 import { runAutoCommitTests } from './autoCommit.test';
+import { runDeathDetectionTests } from './deathDetection.test';
+import { runRewardStageTests } from './rewardStage.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -21,6 +23,8 @@ function runTests() {
   runLogReaderTests();
   runRoomTrackingTests();
   runAutoCommitTests();
+  runDeathDetectionTests();
+  runRewardStageTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
