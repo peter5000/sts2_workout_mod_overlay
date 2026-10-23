@@ -42,8 +42,10 @@ export class FloorParser {
       const hpLostH = Math.max(metric.hp_start - metric.hp_end, 0);
 
       // 4. Calculate workout counter (wc_p)
-      // Even on game defeat, combat debt is accrued so players are held accountable for the final battle
-      const countersAdded = turnsTakenN * (2 + currentDeaths) + hpLostH;
+      // When the run is defeated, workout counters for the final wipe combat are waived (0 wc)
+      // while previous floors' debt is preserved and the 24h jog penalty is triggered.
+      const rawCounters = turnsTakenN * (2 + currentDeaths) + hpLostH;
+      const countersAdded = isDefeatFloor ? 0 : rawCounters;
 
       // 5. Update unresolved debt and aggregates
       const prevDebt = playerUnresolvedDebt.get(idx) || 0;
@@ -54,7 +56,9 @@ export class FloorParser {
       aggs.accrued += countersAdded;
       playerAggregates.set(idx, aggs);
 
-      const formulaStr = `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${countersAdded}`;
+      const formulaStr = isDefeatFloor
+        ? `Defeat Waiver: (${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} -> 0 wc)`
+        : `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${countersAdded}`;
 
       reports.push({
         player_index: idx,

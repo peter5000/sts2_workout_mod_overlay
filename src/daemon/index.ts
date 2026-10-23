@@ -12,7 +12,9 @@ import {
   UpdateRatioPayload,
   StartSessionPayload,
   WebSocketMessage,
-  RunDetectedEvent
+  RunDetectedEvent,
+  CommitPendingPayload,
+  UpdateDeathsPayload
 } from '../shared/types';
 
 dotenv.config();
@@ -149,11 +151,13 @@ app.post('/api/v1/config/ratio', (req, res) => {
   }
 });
 
-// 5. POST /api/v1/session/commit-pending - Manually commits the pending floor (e.g. Save & Quit during rewards)
-app.post('/api/v1/session/commit-pending', (_req, res) => {
-  const commitData = ledger.commitPendingFloor();
+// 5. POST /api/v1/session/commit-pending - Manually commits the pending floor (per-player or party)
+app.post('/api/v1/session/commit-pending', (req, res) => {
+  const payload = req.body as CommitPendingPayload;
+  const pIdx = typeof payload?.player_index === 'number' ? payload.player_index : undefined;
+  const commitData = ledger.commitPendingFloor(pIdx);
   if (commitData) {
-    console.log(`[DAEMON] Manually committed pending floor ${commitData.floor}`);
+    console.log(`[DAEMON] Manually committed pending floor ${commitData.floor} ${pIdx !== undefined ? `for player ${pIdx}` : '(all)'}`);
     broadcast({
       type: 'WORKOUT_FLOOR_COMMITTED',
       timestamp: Date.now(),
@@ -169,6 +173,26 @@ app.post('/api/v1/session/commit-pending', (_req, res) => {
   });
 
   res.json({ success: true, commitData, state: currentState });
+});
+
+// 6. POST /api/v1/config/deaths - Adjusts per-player death counter
+app.post('/api/v1/config/deaths', (req, res) => {
+  const payload = req.body as UpdateDeathsPayload;
+  if (typeof payload?.player_index !== 'number' || typeof payload?.deaths !== 'number') {
+    res.status(400).json({ error: 'Missing required parameters: player_index, deaths' });
+    return;
+  }
+
+  ledger.setPlayerDeaths(payload.player_index, payload.deaths);
+
+  const currentState = ledger.getFullState();
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'STATE_UPDATE', timestamp: Date.now(), data: currentState }));
+    }
+  });
+
+  res.json({ success: true, player_deaths: currentState.player_deaths });
 });
 
 // WebSocket connection lifecycle

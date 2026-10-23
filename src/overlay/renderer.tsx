@@ -242,11 +242,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCommitPendingFloor = async () => {
+  const handleCommitPendingFloor = async (playerIdx?: number) => {
     try {
       await fetch(`${apiBase}/api/v1/session/commit-pending`, {
         method: 'POST',
-        headers: customHeaders
+        headers: customHeaders,
+        body: JSON.stringify({ player_index: playerIdx ?? selectedPlayerIdx })
       });
       fetchState();
     } catch (e) {
@@ -254,10 +255,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateDeaths = async (newDeaths: number) => {
+    if (newDeaths < 0) return;
+    try {
+      await fetch(`${apiBase}/api/v1/config/deaths`, {
+        method: 'POST',
+        headers: customHeaders,
+        body: JSON.stringify({ player_index: selectedPlayerIdx, deaths: newDeaths })
+      });
+      fetchState();
+    } catch (e) {
+      console.error('Failed to update deaths:', e);
+    }
+  };
+
   // Local player active stats
   const activeDebt = session?.player_debts?.[selectedPlayerIdx] || 0;
+  const activeDeaths = session?.player_deaths?.[selectedPlayerIdx] || 0;
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
   const ratio = session?.player_squat_ratios?.[selectedPlayerIdx] || session?.squat_ratio || 2;
+  const pendingFloor = session?.pending_player_floors?.[selectedPlayerIdx];
   const playerIndices = Object.keys(session?.player_debts || {});
 
   const getPlayerName = (idx: number): string => {
@@ -358,7 +375,21 @@ const App: React.FC = () => {
             </div>
           )}
 
-
+          {/* Pending Floor Reward Banner & Commit Button (only visible during reward stage, disappears on commit or next floor) */}
+          {pendingFloor && !pendingFloor.committed && (
+            <div style={styles.pendingFloorBanner}>
+              <div style={{ fontSize: 'clamp(9px, 1.8vh, 11px)', color: '#ecc94b', fontWeight: 'bold' }}>
+                Floor {pendingFloor.floor_num} Rewards ({pendingFloor.wc} wc)
+              </div>
+              <button
+                onClick={() => handleCommitPendingFloor(selectedPlayerIdx)}
+                style={styles.btnCommitPending}
+                title="Commit floor debt early to perform reps during reward screen"
+              >
+                Commit Floor Now
+              </button>
+            </div>
+          )}
 
           <div style={styles.counterBox}>
             <div style={styles.counterLabel}>
@@ -468,6 +499,20 @@ const App: React.FC = () => {
                 <button onClick={() => handleUpdateRatio(ratio + 1)} style={styles.stepperBtn}>+</button>
               </div>
             )}
+          </div>
+
+          {/* Plain text Per-Player Death Counter Stepper (strictly no emoji) */}
+          <div style={styles.ratioRow}>
+            <span style={{ fontWeight: 'bold', color: '#cbd5e0', fontSize: 'clamp(11px, 2.5vh, 15px)' }}>
+              Deaths
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+              <button onClick={() => handleUpdateDeaths(activeDeaths - 1)} style={styles.stepperBtn}>-</button>
+              <span style={{ fontWeight: 'bold', padding: '0 8px', fontSize: 'clamp(11px, 2.5vh, 15px)', color: activeDeaths > 0 ? '#fc8181' : '#edf2f7' }}>
+                {activeDeaths}
+              </span>
+              <button onClick={() => handleUpdateDeaths(activeDeaths + 1)} style={styles.stepperBtn}>+</button>
+            </div>
           </div>
         </div>
       )}

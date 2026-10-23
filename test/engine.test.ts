@@ -64,6 +64,8 @@ function runTests() {
   };
 
   ledger.processSaveData(saveData);
+  // Commit pending floor from reward stage so reps can be resolved
+  ledger.commitPendingFloor();
 
   // Host initial debt should be 26
   const state = ledger.getFullState();
@@ -119,21 +121,25 @@ function runTests() {
   assert(terminatedEvent !== null, 'Terminated event should be emitted on status transition to DEFEAT');
   assert(terminatedEvent?.data.jog_penalty_required === true, 'Jog penalty should be required on defeat');
 
-  // Verify that workout counters for the final defeat combat are accurately calculated and added (not waived)
+  // Verify that workout counters for the final defeat combat are waived (0 wc)
+  // while previous floors' debt is preserved and the 24h jog penalty is triggered.
   assert(defeatCommit !== null, 'Defeat floor commit data should be generated');
-  assert(defeatCommit!.players[0].evaluation.counters_added === 76, `Defeat combat wc should be 76, got ${defeatCommit!.players[0].evaluation.counters_added}`);
-  assert(defeatCommit!.players[1].evaluation.counters_added === 62, `Defeat combat wc should be 62 (4 turns * (2 + 1 death) + 50 hp), got ${defeatCommit!.players[1].evaluation.counters_added}`);
-  // Debt should reflect the final combat: Host had 0 debt -> 76 wc, Ally had 56 debt -> 118 wc
-  assert(ledger.getFullState().player_debts[0] === 76, `Host debt should increase to 76 from defeat combat, got ${ledger.getFullState().player_debts[0]}`);
-  assert(ledger.getFullState().player_debts[1] === 118, `Ally debt should increase to 118 from defeat combat, got ${ledger.getFullState().player_debts[1]}`);
+  assert(defeatCommit!.players[0].evaluation.counters_added === 0, `Defeat combat wc should be waived to 0, got ${defeatCommit!.players[0].evaluation.counters_added}`);
+  assert(defeatCommit!.players[1].evaluation.counters_added === 0, `Defeat combat wc should be waived to 0, got ${defeatCommit!.players[1].evaluation.counters_added}`);
+  // Debt should preserve prior floors: Host had 0 debt -> remains 0 wc, Ally had 56 debt -> remains 56 wc
+  assert(ledger.getFullState().player_debts[0] === 0, `Host debt should preserve prior debt (0), got ${ledger.getFullState().player_debts[0]}`);
+  assert(ledger.getFullState().player_debts[1] === 56, `Ally debt should preserve prior debt (56), got ${ledger.getFullState().player_debts[1]}`);
 
-  console.log('  ✓ Defeat 24h jog penalty trigger and losing combat workout counter preservation verified');
+  console.log('  ✓ Defeat 24h jog penalty trigger and losing combat workout counter waiver (0 wc) verified');
 
   const hist = testPersistence.getHistoryStore();
   const runHist = hist.completed_runs.find((r) => r.run_id === 'test_run_unique_1');
   assert(!!runHist && (runHist.stage_history || []).length === 2, `Stage history should have 2 floor entries, got ${runHist?.stage_history?.length}`);
   assert(runHist!.total_squats === 33 && runHist!.total_pushups === 10, `History totals should be 10 pushups / 33 squats, got ${runHist!.total_pushups}/${runHist!.total_squats}`);
-  console.log('  ✓ Per-floor stage history persisted to workout_history.json');
+  // Verify squat_ratio in party_summary and stage_history
+  assert(runHist!.party_summary?.[0].squat_ratio === 2, `Party summary squat_ratio should be 2`);
+  assert(runHist!.stage_history?.[0].players[0].squat_ratio === 2, `Stage history squat_ratio should be 2`);
+  console.log('  ✓ Per-floor stage history and squat_ratio persisted to workout_history.json');
 
   // 4. Test Native Save File Adapter (normalizeSaveData)
   const { normalizeSaveData } = require('../src/daemon/adapter');
@@ -216,12 +222,14 @@ function runTests() {
   
   // Start SP run 1, log 10 pushups
   multiLedger.processSaveData(run1);
+  multiLedger.commitPendingFloor();
   multiLedger.resolveReps({ player_index: 0, action_type: 'CUSTOM_ENTRY', exercise: 'pushups', reps: 10 });
   assert(multiLedger.getFullState().run_id === 'run_sp_100', 'Active run should be run_sp_100');
   assert(multiLedger.getFullState().player_aggregates[0].pushups === 10, 'SP pushups should be 10');
 
   // Switch to MP run 2
   multiLedger.processSaveData(run2);
+  multiLedger.commitPendingFloor();
   assert(multiLedger.getFullState().run_id === 'run_mp_200', 'Active run should switch to run_mp_200');
   assert(multiLedger.getFullState().player_aggregates[0].pushups === 0, 'MP initial pushups should be 0');
   multiLedger.resolveReps({ player_index: 0, action_type: 'CUSTOM_ENTRY', exercise: 'pushups', reps: 5 });
@@ -271,7 +279,7 @@ function runTests() {
 
   console.log('  ✓ 1-HP revive mid-combat death and subsequent floor penalty verified');
 
-  // 7. Test Immediate Commit Lifecycle & Dynamic Reward Healing (No 1-floor lag!)
+  // 7. Test Reward Stage Lifecycle: Manual Commit, Lock-in, and Reward-Exit Fallback
   const testLedger = new DebtLedger(testPersistence);
   const floor1: RawFloorEntry = {
     floor_num: 1,
@@ -286,7 +294,8 @@ function runTests() {
     player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 70, died_this_floor: false, death_turn: null }]
   };
 
-  // Step A: Floor 2 completes combat (3 turns, 10 dmg -> 16 wc). Commits immediately upon combat end!
+  // Step A: Floor 2 completes combat (3 turns, 10 dmg -> 16 wc).
+  // It enters pending reward stage (buttons appear, debt not locked in yet)!
   testLedger.processSaveData({
     run_id: 'run_immediate_test',
     is_multiplayer: false,
@@ -296,10 +305,12 @@ function runTests() {
     floors: [floor1, floor2]
   });
   let stateNow = testLedger.getFullState();
-  assert(stateNow.player_debts[0] === 16, `Floor 2 should commit immediately (16 wc), got ${stateNow.player_debts[0]}`);
+  assert(stateNow.player_debts[0] === 0, `Floor 2 should enter pending reward stage without premature commit, got ${stateNow.player_debts[0]}`);
+  assert(stateNow.pending_player_floors?.[0]?.wc === 16, `Pending wc should be 16, got ${stateNow.pending_player_floors?.[0]?.wc}`);
+  assert(stateNow.pending_player_floors?.[0]?.committed === false, `Pending committed should be false`);
 
   // Step B: During rewards, player drinks a potion and heals 6 HP (hp_end becomes 76 instead of 70).
-  // Ledger dynamically adjusts Floor 2 debt: 16 - 6 = 10 wc!
+  // Uncommitted player dynamically adjusts pending debt: 16 - 6 = 10 wc!
   const floor2Healed: RawFloorEntry = {
     ...floor2,
     player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 76, died_this_floor: false, death_turn: null }]
@@ -313,14 +324,22 @@ function runTests() {
     floors: [floor1, floor2Healed]
   });
   stateNow = testLedger.getFullState();
-  assert(stateNow.player_debts[0] === 10, `Debt should dynamically reduce to 10 after 6 HP reward heal, got ${stateNow.player_debts[0]}`);
+  assert(stateNow.pending_player_floors?.[0]?.wc === 10, `Pending debt should dynamically reduce to 10 after 6 HP reward heal, got ${stateNow.pending_player_floors?.[0]?.wc}`);
+  assert(stateNow.player_debts[0] === 0, `Debt should remain uncommitted until button click or floor exit`);
 
-  // Step C: Player enters Floor 3 (4 turns, 10 dmg -> 18 wc). Commits immediately! Total debt: 10 + 18 = 28 wc.
-  const floor3: RawFloorEntry = {
-    floor_num: 3,
-    room_type: 'monster',
-    total_combat_turns: 4,
-    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 76, hp_end: 66, died_this_floor: false, death_turn: null }]
+  // Step C: Player manually commits early in rewards to do reps immediately!
+  const commitRes = testLedger.commitPendingFloor(0);
+  assert(commitRes !== null, 'commitPendingFloor should return commit data');
+  stateNow = testLedger.getFullState();
+  assert(stateNow.player_debts[0] === 10, `Player debt should be committed to 10 wc, got ${stateNow.player_debts[0]}`);
+  assert(stateNow.pending_player_floors?.[0]?.committed === true, `Player pending status should be committed`);
+
+  // Step D: Early Commit Lock-in verification:
+  // Player drinks another potion (healing 4 HP, hp_end becomes 80).
+  // Because player already committed, this healing CANNOT reduce workout debt!
+  const floor2HealedMore: RawFloorEntry = {
+    ...floor2,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 80, died_this_floor: false, death_turn: null }]
   };
   testLedger.processSaveData({
     run_id: 'run_immediate_test',
@@ -328,12 +347,63 @@ function runTests() {
     player_count: 1,
     players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
     run_status: 'ACTIVE',
-    floors: [floor1, floor2Healed, floor3]
+    floors: [floor1, floor2HealedMore]
   });
   stateNow = testLedger.getFullState();
-  assert(stateNow.player_debts[0] === 28, `Total debt should be 28, got ${stateNow.player_debts[0]}`);
+  assert(stateNow.player_debts[0] === 10, `Committed player debt must remain locked at 10 wc, got ${stateNow.player_debts[0]}`);
 
-  console.log('  ✓ Immediate commit (zero lag) and dynamic reward healing adjustment verified');
+  // Step E: Player advances to Floor 3 (4 turns, 10 dmg -> 18 wc).
+  // Floor 2 is cleaned up, Floor 3 becomes pending.
+  const floor3: RawFloorEntry = {
+    floor_num: 3,
+    room_type: 'monster',
+    total_combat_turns: 4,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 70, died_this_floor: false, death_turn: null }]
+  };
+  testLedger.processSaveData({
+    run_id: 'run_immediate_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2HealedMore, floor3]
+  });
+  stateNow = testLedger.getFullState();
+  assert(stateNow.pending_player_floors?.[0]?.floor_num === 3, 'Floor 3 should now be pending');
+  assert(stateNow.pending_player_floors?.[0]?.wc === 18, 'Floor 3 pending wc should be 18');
+  assert(stateNow.player_debts[0] === 10, 'Player debt should still be 10 before committing Floor 3');
+
+  // Step F: Player does NOT commit Floor 3 manually, and moves to Floor 4.
+  // Floor 3 auto-commits upon advancing to next floor! (10 + 18 = 28 wc)
+  const floor4: RawFloorEntry = {
+    floor_num: 4,
+    room_type: 'event',
+    total_combat_turns: 0,
+    player_metrics: [{ player_index: 0, player_name: 'Hero', hp_start: 70, hp_end: 70, died_this_floor: false, death_turn: null }]
+  };
+  testLedger.processSaveData({
+    run_id: 'run_immediate_test',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'IRONCLAD' }],
+    run_status: 'ACTIVE',
+    floors: [floor1, floor2HealedMore, floor3, floor4]
+  });
+  stateNow = testLedger.getFullState();
+  assert(stateNow.player_debts[0] === 28, `Floor 3 should auto-commit upon entering next floor (total 28 wc), got ${stateNow.player_debts[0]}`);
+
+  console.log('  ✓ Per-player reward stage pending, early commit lock-in, and reward-exit auto-commit verified');
+
+  // 8. Test Per-Player Death Counter Stepper & Workout History Persistence
+  testLedger.setPlayerDeaths(0, 3);
+  stateNow = testLedger.getFullState();
+  assert(stateNow.player_deaths[0] === 3, `Player deaths in active session should be 3, got ${stateNow.player_deaths[0]}`);
+
+  const updatedHist = testPersistence.getHistoryStore();
+  const runEntry = updatedHist.completed_runs.find((r) => r.run_id === 'run_immediate_test');
+  assert(!!runEntry, 'run_immediate_test should exist in workout_history.json');
+  assert(runEntry!.stage_history?.[runEntry!.stage_history!.length - 1].players[0].deaths === 3, 'Latest stage_history player deaths should be updated to 3');
+  console.log('  ✓ Per-player death counter stepper updates active session and workout history cleanly');
 
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

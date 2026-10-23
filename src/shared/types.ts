@@ -1,4 +1,4 @@
-﻿// Slay the Spire 2 Workout Mode Overlay - Shared Types & Data Contracts
+// Slay the Spire 2 Workout Mode Overlay - Shared Types & Data Contracts
 
 export interface PlayerInfo {
   index: number;
@@ -28,6 +28,20 @@ export interface ActiveSessionStore {
     floor_num: number;
     room_type: RoomType;
   } | null;
+  pending_player_floors?: Record<number, PendingPlayerFloor>;
+}
+
+export interface PendingPlayerFloor {
+  player_index: number;
+  floor_num: number;
+  room_type: RoomType;
+  wc: number;
+  formula: string;
+  turns_taken: number;
+  deaths_accumulated: number;
+  hp_lost: number;
+  player_died: boolean;
+  committed: boolean;
 }
 
 export type RoomType = 'monster' | 'elite' | 'boss' | 'event' | 'campfire' | 'shop' | 'rest';
@@ -115,6 +129,7 @@ export interface FloorCommittedEvent {
 export interface PartyMemberSummary {
   player_index: number;
   player_name: string;
+  squat_ratio: number;
   final_unresolved_debt: number;
   total_pushups: number;
   total_squats: number;
@@ -157,6 +172,15 @@ export interface UpdateRatioPayload {
   player_index?: number;
   squat_ratio?: number;
   ratio?: number;
+}
+
+export interface CommitPendingPayload {
+  player_index?: number;
+}
+
+export interface UpdateDeathsPayload {
+  player_index: number;
+  deaths: number;
 }
 
 export interface StartSessionPayload {

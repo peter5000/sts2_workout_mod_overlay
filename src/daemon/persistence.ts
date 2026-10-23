@@ -5,6 +5,7 @@ import { ActiveSessionStore, PartyMemberSummary } from '../shared/types';
 export interface FloorPlayerWorkoutLog {
   player_index: number;
   player_name: string;
+  squat_ratio: number;
   counters_accrued: number;
   unresolved_debt: number;
   cumulative_pushups: number;
@@ -182,6 +183,27 @@ export class PersistenceManager {
       runEntry.total_pushups = totalPushups;
       runEntry.total_squats = totalSquats;
       runEntry.total_counters_accrued = totalAccrued;
+      this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
+    }
+  }
+
+  public updatePlayerDeaths(
+    runId: string,
+    playerIndex: number,
+    deaths: number
+  ): void {
+    const history = this.getHistoryStore();
+    const runEntry = history.completed_runs.find((r) => r.run_id === runId);
+    if (runEntry) {
+      if (runEntry.party_summary) {
+        const pSummary = runEntry.party_summary.find((p) => p.player_index === playerIndex);
+        if (pSummary) pSummary.deaths = deaths;
+      }
+      if (runEntry.stage_history && runEntry.stage_history.length > 0) {
+        const lastStage = runEntry.stage_history[runEntry.stage_history.length - 1];
+        const pStage = lastStage.players.find((p) => p.player_index === playerIndex);
+        if (pStage) pStage.deaths = deaths;
+      }
       this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
     }
   }

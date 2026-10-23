@@ -14,8 +14,7 @@
 ### Features & Mechanics
 * **Zero Modding Required:** Operates entirely out-of-process as a host daemon reading local save checkpoints—keeping game files intact and preserving Steam achievements.
 * **Per-Player Attribution Engine:** Calculates individual workout counters ($wc_p$) per player rather than pooling party debt.
-* **Mid-Combat Turn Freezing:** If a player dies mid-combat, their turn count ($n_p$) freezes at the exact round of death so surviving allies don't inflate the fallen player's exercise debt.
-* **Delayed Commit & Reward Balancing:** Debt is finalized once rewards are claimed and you step onto the next floor, allowing healing from rewards to offset damage taken.
+* **Per-Player Manual Commit & Reward-Exit Fallback:** During the reward stage, players can click "Commit Floor Now" in Panel A to lock in debt early and do reps during rewards (forfeiting subsequent reward heals). If uncommitted, debt auto-commits with full reward healing credit when the party steps onto the next floor.
 * **Dynamic Squat Ratio ($R$):** Instantly adjust rep conversions during gameplay (default: $R = 2$, where $2\ \text{Squats} = 1\ wc$ and $1\ \text{Push-up} = 1\ wc$).
 * **Transparent Click-Through Overlay:** Built with Electron & React—floats directly over Slay the Spire 2 with toggleable mouse click-through support.
 * **Accountability Defeat Penalty:** Runs ending in defeat trigger a live **24-Hour Countdown Timer** for a mandatory 30-minute jog penalty.
@@ -176,6 +175,51 @@ PLAYER_NAME_10000000000000003=PlayerThree
 2. Restart everything (host: daemon → ngrok → overlay; joiner: overlay). Re-share the ngrok URL if it changed.
 3. Still broken? Open a GitHub issue with: your role (host/joiner), OS, the daemon console output,
    and what you expected vs. what happened. Redact Steam IDs and ngrok URLs.
+
+---
+
+## ❓ Frequently Asked Questions & Edge Cases (Q&A)
+
+<details open>
+<summary><b>💀 When does a death penalty start affecting my workout counter multiplier?</b></summary>
+
+**A:** The death penalty multiplier takes effect starting from the **subsequent floor** (the floor after you died).
+* In the formula $wc_p = n_p(2 + d_p) + h_p$, the multiplier $(2 + d_p)$ on the floor where you die uses your cumulative deaths **entering** that floor.
+* Your turn count ($n_p$) freezes at the exact round of death so you are not penalized for additional turns your surviving allies take.
+* At the conclusion of that floor, your death count increments ($d_p \leftarrow d_p + 1$). All subsequent combat floors will multiply your turns by $(2 + d_{\text{new}})$.
+</details>
+
+<details>
+<summary><b>❤️ In co-op, if I die mid-combat but my allies win and I revive with 1 HP, does it count as a death?</b></summary>
+
+**A:** **Yes.** Even though Slay the Spire 2 revives fallen teammates with 1 HP after a victory, the daemon enriches save checkpoints with `godot.log` to catch the mid-combat death event (`Player X died, doing death handling`).
+* Your combat turns ($n_p$) freeze at your round of death.
+* Your cumulative death count ($d_p$) increments by $+1$ for all future floors.
+</details>
+
+<details>
+<summary><b>🛡️ What happens if the entire party wipes (Game Defeat)?</b></summary>
+
+**A:** On full game defeat, workout counters for the final losing battle are **waived** ($wc = 0$).
+* You are **not** double-penalized with push-up/squat debt for the battle that ended the run.
+* Prior uncompleted floors' debt is preserved.
+* The mandatory **30-minute defeat jog penalty** triggers with an active 24-hour countdown timer on the overlay.
+</details>
+
+<details>
+<summary><b>🩹 If I heal from potions or relics on the reward screen, does my debt decrease?</b></summary>
+
+**A:** **Yes, as long as you have not manually committed the floor yet.**
+During the reward screen of combat encounters, a **"Commit Floor Now"** button appears in Panel A:
+* **If you wait:** Any healing received during rewards (drinking a potion, picking a healing card/relic, etc.) dynamically offsets your HP damage taken ($h_p$). Once all players finish rewards and advance to Floor $n+1$, your debt auto-commits with that healing factored in, and the commit button disappears.
+* **If you commit early:** Clicking "Commit Floor Now" locks in your workout debt immediately so you can start clearing reps during the reward screen. Once committed, you forfeit subsequent reward healing reductions for that floor.
+</details>
+
+<details>
+<summary><b>🚀 What happens if we launch the overlay in the middle of an active run?</b></summary>
+
+**A:** The daemon sequentially replays past floors from `map_point_history` to catch up your active debt. Because earlier mid-combat deaths from prior encounters may have already scrolled past `godot.log`, you can adjust your death counter directly in the Panel B HUD if needed.
+</details>
 
 ---
 

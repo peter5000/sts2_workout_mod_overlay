@@ -7,7 +7,8 @@ import {
   RunTerminatedEvent,
   PartyMemberSummary,
   PlayerInfo,
-  ActiveSessionStore
+  ActiveSessionStore,
+  PendingPlayerFloor
 } from '../shared/types';
 import { FloorParser } from './parser';
 import { PersistenceManager } from './persistence';
@@ -31,6 +32,7 @@ export class DebtLedger {
   private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
 
   private pendingFloorEntry: RawFloorEntry | null = null;
+  private pendingPlayerFloors: Map<number, PendingPlayerFloor> = new Map();
 
   private jogPenaltyActive: boolean = false;
   private jogPenaltyDeadline: number | null = null;
@@ -86,76 +88,142 @@ export class DebtLedger {
     const maxFloorNum = sortedFloors.length > 0 ? sortedFloors[sortedFloors.length - 1].floor_num : 0;
     const isTerminal = runData.run_status === 'VICTORY' || runData.run_status === 'DEFEAT';
 
-    // Immediate commit logic:
-    // Floors commit immediately upon encounter completion so players can do their workout
-    // during the reward screen without a 1-floor lag.
-    const newFloors = sortedFloors.filter((f) => {
-      if (!f || f.floor_num <= this.lastProcessedFloor) return false;
-      return true;
-    });
+    // 1. If we currently have a pending floor from a prior combat encounter:
+    if (this.pendingPlayerFloors.size > 0) {
+      const samplePending = this.pendingPlayerFloors.values().next().value as PendingPlayerFloor;
+      const pendingFloorNum = samplePending?.floor_num;
 
-    this.pendingFloorEntry = null;
+      if (pendingFloorNum !== undefined) {
+        // Did the party finish reward picking and move on to the next floor?
+        // (Or did the run terminate?)
+        const partyMovedOn = maxFloorNum > pendingFloorNum || (isTerminal && maxFloorNum === pendingFloorNum && this.lastProcessedFloor < pendingFloorNum);
 
-    // Check if the current processed floor had reward healing (e.g. potion or relic healing during rewards)
-    if (this.lastProcessedFloor > 0 && sortedFloors.length > 0) {
-      const currentFloorEntry = sortedFloors.find((f) => f && f.floor_num === this.lastProcessedFloor);
-      if (currentFloorEntry && ['monster', 'elite', 'boss'].includes(currentFloorEntry.room_type)) {
-        for (const metric of currentFloorEntry.player_metrics) {
-          const pIdx = metric.player_index;
-          const hist = this.persistence.getHistoryStore();
-          const runHist = hist.completed_runs.find((r) => r.run_id === this.runId);
-          const stageEntry = runHist?.stage_history?.find((s) => s.floor_num === this.lastProcessedFloor);
-          const playerStageLog = stageEntry?.players.find((p) => p.player_index === pIdx);
-
-          if (playerStageLog) {
-            const currentHpLoss = Math.max(0, metric.hp_start - metric.hp_end);
-            if (currentHpLoss < playerStageLog.hp_loss) {
-              const healDiff = playerStageLog.hp_loss - currentHpLoss;
+        if (partyMovedOn) {
+          // All players finished rewards and moved to the next floor!
+          // Auto-commit any players who did not commit early:
+          const autoReports: PlayerFloorReport[] = [];
+          for (const [pIdx, pending] of this.pendingPlayerFloors.entries()) {
+            if (!pending.committed) {
+              pending.committed = true;
               const curDebt = this.playerDebts.get(pIdx) || 0;
-              const newDebt = Math.max(0, curDebt - healDiff);
-              this.playerDebts.set(pIdx, newDebt);
-
+              this.playerDebts.set(pIdx, curDebt + pending.wc);
               const aggs = this.playerAggregates.get(pIdx) || { accrued: 0, pushups: 0, squats: 0 };
-              aggs.accrued = Math.max(0, aggs.accrued - healDiff);
+              aggs.accrued += pending.wc;
               this.playerAggregates.set(pIdx, aggs);
+              if (pending.player_died) {
+                this.playerDeaths.set(pIdx, (this.playerDeaths.get(pIdx) || 0) + 1);
+              }
+              autoReports.push(this.buildReportForPending(pending));
+            }
+          }
 
-              playerStageLog.hp_loss = currentHpLoss;
-              playerStageLog.counters_accrued = Math.max(0, playerStageLog.counters_accrued - healDiff);
-              playerStageLog.unresolved_debt = newDebt;
-              this.persistence.saveWorkoutHistory(hist);
+          if (this.pendingFloorEntry) {
+            this.recordStageFromPending(this.pendingFloorEntry, this.pendingPlayerFloors, runData.run_status);
+          }
+          this.lastProcessedFloor = pendingFloorNum;
+          this.pendingPlayerFloors.clear();
+          this.pendingFloorEntry = null;
+
+          if (autoReports.length > 0) {
+            commitData = {
+              floor: pendingFloorNum,
+              room_type: samplePending.room_type,
+              players: autoReports
+            };
+          }
+        } else {
+          // Still in the reward stage of pendingFloorNum:
+          // Check if uncommitted players received reward healing (potions, relics, etc.)
+          const currentFloorEntry = sortedFloors.find((f) => f && f.floor_num === pendingFloorNum);
+          if (currentFloorEntry && ['monster', 'elite', 'boss'].includes(currentFloorEntry.room_type)) {
+            for (const metric of currentFloorEntry.player_metrics) {
+              const pIdx = metric.player_index;
+              const pending = this.pendingPlayerFloors.get(pIdx);
+              if (pending && !pending.committed) {
+                // Uncommitted player: reward healing offsets damage taken!
+                const currentHpLoss = Math.max(0, metric.hp_start - metric.hp_end);
+                const turns = pending.turns_taken;
+                const deaths = pending.deaths_accumulated;
+                const newWc = turns * (2 + deaths) + currentHpLoss;
+                pending.hp_lost = currentHpLoss;
+                pending.wc = newWc;
+                pending.formula = `${turns} * (2 + ${deaths}) + ${currentHpLoss} = ${newWc}`;
+              }
+              // If pending.committed === true:
+              // Early Commit Lock-in Rule: committed players cannot receive subsequent reward healing reductions!
             }
           }
         }
       }
     }
 
+    // 2. Identify newly completed floors (excluding any floor currently pending in reward stage)
+    const currentPendingNum = this.pendingFloorEntry?.floor_num ?? (this.pendingPlayerFloors.size > 0 ? (this.pendingPlayerFloors.values().next().value as PendingPlayerFloor)?.floor_num : null);
+
+    const newFloors = sortedFloors.filter((f) => {
+      if (!f || f.floor_num <= this.lastProcessedFloor) return false;
+      if (currentPendingNum !== null && f.floor_num === currentPendingNum) return false;
+      return true;
+    });
+
     if (newFloors.length > 0) {
-      const allReports: PlayerFloorReport[] = [];
-      let latestFloorNum = this.lastProcessedFloor;
-      let latestRoomType = newFloors[newFloors.length - 1].room_type;
-
       for (const floorEntry of newFloors) {
-        const isDefeatFloor = (runData.run_status === 'DEFEAT') && (floorEntry.floor_num === maxFloorNum);
-        const floorReports = FloorParser.parseFloor(
-          floorEntry,
-          this.playerDeaths,
-          this.playerDebts,
-          this.playerAggregates,
-          this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio,
-          isDefeatFloor
-        );
-        allReports.push(...floorReports);
-        latestFloorNum = floorEntry.floor_num;
-        this.recordStage(floorEntry.floor_num, floorEntry.room_type, floorReports, runData.run_status);
+        const isLatest = floorEntry.floor_num === maxFloorNum;
+        const isCombat = ['monster', 'elite', 'boss'].includes(floorEntry.room_type);
+
+        if (isLatest && isCombat && runData.run_status === 'ACTIVE') {
+          // REWARD STAGE of combat encounter:
+          // Make floor debt pending so players can review and choose to commit early during rewards
+          this.pendingFloorEntry = floorEntry;
+          this.pendingPlayerFloors.clear();
+
+          for (const metric of floorEntry.player_metrics) {
+            const pIdx = metric.player_index;
+            const currentDeaths = this.playerDeaths.get(pIdx) || 0;
+            let turnsTakenN = floorEntry.total_combat_turns;
+            if (metric.died_this_floor && metric.death_turn !== null && metric.death_turn > 0) {
+              turnsTakenN = metric.death_turn;
+            }
+            const hpLostH = Math.max(0, metric.hp_start - metric.hp_end);
+            const rawCounters = turnsTakenN * (2 + currentDeaths) + hpLostH;
+            const formulaStr = `${turnsTakenN} * (2 + ${currentDeaths}) + ${hpLostH} = ${rawCounters}`;
+
+            this.pendingPlayerFloors.set(pIdx, {
+              player_index: pIdx,
+              floor_num: floorEntry.floor_num,
+              room_type: floorEntry.room_type,
+              wc: rawCounters,
+              formula: formulaStr,
+              turns_taken: turnsTakenN,
+              deaths_accumulated: currentDeaths,
+              hp_lost: hpLostH,
+              player_died: metric.died_this_floor,
+              committed: false
+            });
+          }
+          // Note: floor does not commit yet; buttons show in Panel A during reward stage!
+        } else {
+          // Non-combat room (campfire, event, shop) or terminal floor (DEFEAT / VICTORY):
+          // Commits immediately.
+          const isDefeatFloor = (runData.run_status === 'DEFEAT') && isLatest;
+          const floorReports = FloorParser.parseFloor(
+            floorEntry,
+            this.playerDeaths,
+            this.playerDebts,
+            this.playerAggregates,
+            this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio,
+            isDefeatFloor
+          );
+          this.lastProcessedFloor = floorEntry.floor_num;
+          this.recordStage(floorEntry.floor_num, floorEntry.room_type, floorReports, runData.run_status);
+
+          commitData = {
+            floor: floorEntry.floor_num,
+            room_type: floorEntry.room_type,
+            players: floorReports
+          };
+        }
       }
-
-      this.lastProcessedFloor = latestFloorNum;
-
-      commitData = {
-        floor: latestFloorNum,
-        room_type: latestRoomType,
-        players: allReports
-      };
     }
 
     let terminatedEvent: RunTerminatedEvent | null = null;
@@ -171,34 +239,70 @@ export class DebtLedger {
     return { isNewRun, commitData, terminatedEvent };
   }
 
-  public commitPendingFloor(): FloorCommitData | null {
-    if (!this.pendingFloorEntry || this.pendingFloorEntry.floor_num <= this.lastProcessedFloor) {
+  public commitPendingFloor(playerIndex?: number): FloorCommitData | null {
+    if (this.pendingPlayerFloors.size === 0) {
       return null;
     }
 
-    const floorEntry = this.pendingFloorEntry;
-    this.pendingFloorEntry = null;
+    const reports: PlayerFloorReport[] = [];
 
-    const floorReports = FloorParser.parseFloor(
-      floorEntry,
-      this.playerDeaths,
-      this.playerDebts,
-      this.playerAggregates,
-      this.playerSquatRatios.size > 0 ? this.buildRatioMap() : this.squatRatio,
-      false
-    );
+    if (playerIndex !== undefined) {
+      const pending = this.pendingPlayerFloors.get(playerIndex);
+      if (!pending || pending.committed) {
+        return null;
+      }
 
-    this.lastProcessedFloor = floorEntry.floor_num;
-    this.recordStage(floorEntry.floor_num, floorEntry.room_type, floorReports, this.runStatus);
+      pending.committed = true;
+      const curDebt = this.playerDebts.get(playerIndex) || 0;
+      this.playerDebts.set(playerIndex, curDebt + pending.wc);
+      const aggs = this.playerAggregates.get(playerIndex) || { accrued: 0, pushups: 0, squats: 0 };
+      aggs.accrued += pending.wc;
+      this.playerAggregates.set(playerIndex, aggs);
+      if (pending.player_died) {
+        this.playerDeaths.set(playerIndex, (this.playerDeaths.get(playerIndex) || 0) + 1);
+      }
 
-    const commitData: FloorCommitData = {
-      floor: floorEntry.floor_num,
-      room_type: floorEntry.room_type,
-      players: floorReports
-    };
+      reports.push(this.buildReportForPending(pending));
 
-    this.persistCurrentState();
-    return commitData;
+      if (this.pendingFloorEntry) {
+        this.recordStageFromPending(this.pendingFloorEntry, this.pendingPlayerFloors, this.runStatus);
+      }
+
+      this.persistCurrentState();
+      return {
+        floor: pending.floor_num,
+        room_type: pending.room_type,
+        players: reports
+      };
+    } else {
+      // Bulk commit all uncommitted players
+      for (const [pIdx, pending] of this.pendingPlayerFloors.entries()) {
+        if (!pending.committed) {
+          pending.committed = true;
+          const curDebt = this.playerDebts.get(pIdx) || 0;
+          this.playerDebts.set(pIdx, curDebt + pending.wc);
+          const aggs = this.playerAggregates.get(pIdx) || { accrued: 0, pushups: 0, squats: 0 };
+          aggs.accrued += pending.wc;
+          this.playerAggregates.set(pIdx, aggs);
+          if (pending.player_died) {
+            this.playerDeaths.set(pIdx, (this.playerDeaths.get(pIdx) || 0) + 1);
+          }
+          reports.push(this.buildReportForPending(pending));
+        }
+      }
+
+      if (this.pendingFloorEntry) {
+        this.recordStageFromPending(this.pendingFloorEntry, this.pendingPlayerFloors, this.runStatus);
+      }
+
+      this.persistCurrentState();
+      const sample = this.pendingPlayerFloors.values().next().value as PendingPlayerFloor | undefined;
+      return {
+        floor: sample ? sample.floor_num : this.lastProcessedFloor,
+        room_type: sample ? sample.room_type : 'monster',
+        players: reports
+      };
+    }
   }
 
   public resolveReps(payload: ResolveRepsPayload): { success: boolean; updatedDebt: number; updatedPushups: number; updatedSquats: number } {
@@ -275,6 +379,15 @@ export class DebtLedger {
     this.persistCurrentState();
   }
 
+  public setPlayerDeaths(playerIndex: number, deaths: number): void {
+    const clamped = Math.max(0, deaths);
+    this.playerDeaths.set(playerIndex, clamped);
+    this.persistCurrentState();
+    if (this.runId) {
+      this.persistence.updatePlayerDeaths(this.runId, playerIndex, clamped);
+    }
+  }
+
   public getPlayerRatio(playerIndex: number): number {
     return this.playerSquatRatios.get(playerIndex) ?? this.squatRatio;
   }
@@ -299,6 +412,82 @@ export class DebtLedger {
     return { totalAccrued, totalPushups, totalSquats };
   }
 
+  private buildReportForPending(pending: PendingPlayerFloor): PlayerFloorReport {
+    const pIdx = pending.player_index;
+    const pName = this.playerNames.get(pIdx) || `Player ${pIdx + 1}`;
+    const curDebt = this.playerDebts.get(pIdx) || 0;
+    const aggs = this.playerAggregates.get(pIdx) || { accrued: 0, pushups: 0, squats: 0 };
+    const deaths = this.playerDeaths.get(pIdx) || 0;
+    return {
+      player_index: pIdx,
+      player_name: pName,
+      evaluation: {
+        turns_taken_n: pending.turns_taken,
+        player_died: pending.player_died,
+        deaths_accumulated_d: deaths,
+        hp_lost_h: pending.hp_lost,
+        formula: pending.formula,
+        counters_added: pending.wc
+      },
+      debt_state: {
+        unresolved_counters: curDebt,
+        squat_ratio: this.getPlayerRatio(pIdx)
+      },
+      aggregates: {
+        total_counters_accrued: aggs.accrued,
+        completed_pushups: aggs.pushups,
+        completed_squats: aggs.squats
+      }
+    };
+  }
+
+  private recordStageFromPending(
+    floorEntry: RawFloorEntry,
+    pendingMap: Map<number, PendingPlayerFloor>,
+    status: 'ACTIVE' | 'VICTORY' | 'DEFEAT'
+  ): void {
+    if (!this.runId) return;
+
+    const stagePlayers = Array.from(pendingMap.values()).map((p) => {
+      const pIdx = p.player_index;
+      const pName = this.playerNames.get(pIdx) || `Player ${pIdx + 1}`;
+      const curDebt = this.playerDebts.get(pIdx) || 0;
+      const aggs = this.playerAggregates.get(pIdx) || { accrued: 0, pushups: 0, squats: 0 };
+      const deaths = this.playerDeaths.get(pIdx) || 0;
+      return {
+        player_index: pIdx,
+        player_name: pName,
+        squat_ratio: this.getPlayerRatio(pIdx),
+        counters_accrued: p.committed ? p.wc : 0,
+        unresolved_debt: curDebt,
+        cumulative_pushups: aggs.pushups,
+        cumulative_squats: aggs.squats,
+        deaths,
+        hp_loss: p.hp_lost,
+        turns_taken: p.turns_taken
+      };
+    });
+
+    const t = this.computeTotals();
+
+    this.persistence.recordFloorStage(
+      this.runId,
+      {
+        floor_num: floorEntry.floor_num,
+        room_type: floorEntry.room_type,
+        timestamp: Date.now(),
+        players: stagePlayers
+      },
+      {
+        floors_reached: floorEntry.floor_num,
+        total_counters_accrued: t.totalAccrued,
+        total_pushups: t.totalPushups,
+        total_squats: t.totalSquats,
+        outcome: status
+      }
+    );
+  }
+
   private recordStage(
     floorNum: number,
     roomType: string,
@@ -310,6 +499,7 @@ export class DebtLedger {
     const stagePlayers = reports.map((r) => ({
       player_index: r.player_index,
       player_name: r.player_name,
+      squat_ratio: this.getPlayerRatio(r.player_index),
       counters_accrued: r.evaluation.counters_added,
       unresolved_debt: r.debt_state.unresolved_counters,
       cumulative_pushups: r.aggregates.completed_pushups,
@@ -366,6 +556,9 @@ export class DebtLedger {
     this.playerDebts.forEach((_v, key) => (ratiosObj[key] = this.getPlayerRatio(key)));
     this.playerSquatRatios.forEach((val, key) => (ratiosObj[key] = val));
 
+    const pendingObj: Record<number, PendingPlayerFloor> = {};
+    this.pendingPlayerFloors.forEach((val, key) => (pendingObj[key] = val));
+
     return {
       run_id: this.runId,
       is_multiplayer: this.isMultiplayer,
@@ -387,7 +580,11 @@ export class DebtLedger {
       pending_floor: this.pendingFloorEntry ? {
         floor_num: this.pendingFloorEntry.floor_num,
         room_type: this.pendingFloorEntry.room_type
-      } : null
+      } : (this.pendingPlayerFloors.size > 0 ? {
+        floor_num: this.pendingPlayerFloors.values().next().value!.floor_num,
+        room_type: this.pendingPlayerFloors.values().next().value!.room_type
+      } : null),
+      pending_player_floors: pendingObj
     };
   }
 
@@ -411,6 +608,7 @@ export class DebtLedger {
     this.lastProcessedFloor = 0;
     this.runStatus = 'ACTIVE';
     this.pendingFloorEntry = null;
+    this.pendingPlayerFloors.clear();
 
     this.playerDebts.clear();
     this.playerDeaths.clear();
@@ -440,6 +638,7 @@ export class DebtLedger {
       return {
         player_index: idx,
         player_name: p.name,
+        squat_ratio: this.getPlayerRatio(idx),
         final_unresolved_debt: this.playerDebts.get(idx) || 0,
         total_pushups: aggs.pushups,
         total_squats: aggs.squats,
@@ -512,8 +711,15 @@ export class DebtLedger {
     this.playerSquatRemainders.clear();
     this.playerNames.clear();
     this.playerSquatRatios.clear();
+    this.pendingPlayerFloors.clear();
+
     if (saved.player_squat_ratios) {
       Object.entries(saved.player_squat_ratios).forEach(([k, v]) => this.playerSquatRatios.set(Number(k), v));
+    }
+    if (saved.pending_player_floors) {
+      Object.entries(saved.pending_player_floors).forEach(([k, v]) => {
+        this.pendingPlayerFloors.set(Number(k), v);
+      });
     }
 
     Object.entries(saved.player_debts || {}).forEach(([k, v]) => this.playerDebts.set(Number(k), v));
