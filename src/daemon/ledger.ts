@@ -94,9 +94,17 @@ export class DebtLedger {
       const pendingFloorNum = samplePending?.floor_num;
 
       if (pendingFloorNum !== undefined) {
+        const currentFloor = typeof runData.current_floor === 'number' ? runData.current_floor : maxFloorNum;
+        const inRewardStage = typeof runData.in_reward_stage === 'boolean'
+          ? runData.in_reward_stage
+          : (currentFloor === pendingFloorNum);
+
         // Did the party finish reward picking and move on to the next floor?
         // (Or did the run terminate?)
-        const partyMovedOn = maxFloorNum > pendingFloorNum || (isTerminal && maxFloorNum === pendingFloorNum && this.lastProcessedFloor < pendingFloorNum);
+        const partyMovedOn = currentFloor > pendingFloorNum ||
+                             maxFloorNum > pendingFloorNum ||
+                             (!inRewardStage && currentFloor >= pendingFloorNum) ||
+                             (isTerminal && maxFloorNum === pendingFloorNum && this.lastProcessedFloor < pendingFloorNum);
 
         if (partyMovedOn) {
           // All players finished rewards and moved to the next floor!
@@ -169,9 +177,15 @@ export class DebtLedger {
     if (newFloors.length > 0) {
       for (const floorEntry of newFloors) {
         const isLatest = floorEntry.floor_num === maxFloorNum;
+        const currentFloor = typeof runData.current_floor === 'number' ? runData.current_floor : maxFloorNum;
         const isCombat = ['monster', 'elite', 'boss'].includes(floorEntry.room_type);
+        const inRewardStage = typeof runData.in_reward_stage === 'boolean'
+          ? runData.in_reward_stage
+          : (currentFloor === floorEntry.floor_num);
 
-        if (isLatest && isCombat && runData.run_status === 'ACTIVE') {
+        const isRewardStageNow = (floorEntry.floor_num === currentFloor) && isCombat && inRewardStage && (runData.run_status === 'ACTIVE');
+
+        if (isRewardStageNow) {
           // REWARD STAGE of combat encounter:
           // Make floor debt pending so players can review and choose to commit early during rewards
           this.pendingFloorEntry = floorEntry;

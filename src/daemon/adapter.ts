@@ -75,6 +75,7 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
 
   // Handle standard RawRunSaveData format
   if (Array.isArray(raw.floors) && typeof raw.run_id === 'string' && Array.isArray(raw.players)) {
+    const maxFloor = raw.floors.reduce((max: number, f: any) => Math.max(max, f.floor_num || 0), 0);
     return {
       run_id: raw.run_id,
       is_multiplayer: Boolean(raw.is_multiplayer),
@@ -88,7 +89,9 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
         };
       }),
       floors: raw.floors,
-      run_status: raw.run_status === 'VICTORY' || raw.run_status === 'DEFEAT' ? raw.run_status : 'ACTIVE'
+      run_status: raw.run_status === 'VICTORY' || raw.run_status === 'DEFEAT' ? raw.run_status : 'ACTIVE',
+      current_floor: typeof raw.current_floor === 'number' ? raw.current_floor : maxFloor,
+      in_reward_stage: typeof raw.in_reward_stage === 'boolean' ? raw.in_reward_stage : undefined
     };
   }
 
@@ -292,12 +295,48 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
     });
   }
 
+  // Calculate actual current floor reached in the run:
+  // StS2 appends completed rooms to map_point_history, but does NOT append the current active node
+  // (e.g. event room, campfire, shop, or active combat) until that node is exited!
+  // However, visited_map_coords tracks every node coordinate entered in the current act.
+  let current_floor = 0;
+  if (Array.isArray(raw.map_point_history)) {
+    const actIdx = typeof raw.current_act_index === 'number' ? raw.current_act_index : 0;
+    for (let a = 0; a < actIdx && a < raw.map_point_history.length; a++) {
+      if (Array.isArray(raw.map_point_history[a])) {
+        current_floor += raw.map_point_history[a].length;
+      }
+    }
+    if (Array.isArray(raw.visited_map_coords) && raw.visited_map_coords.length > 0) {
+      current_floor += raw.visited_map_coords.length;
+    } else if (Array.isArray(raw.map_point_history[actIdx])) {
+      current_floor += raw.map_point_history[actIdx].length;
+    }
+  } else if (typeof raw.current_floor === 'number') {
+    current_floor = raw.current_floor;
+  }
+  const maxFloorNum = floors.reduce((max: number, f: any) => Math.max(max, f.floor_num || 0), 0);
+  current_floor = Math.max(current_floor, maxFloorNum);
+
+  // Detect if currently sitting at a combat reward screen:
+  // In native StS2, when combat ends and rewards are available, pre_finished_room is populated
+  // with is_pre_finished: true. When rewards are claimed and the player selects the next node,
+  // pre_finished_room is cleared to null.
+  let in_reward_stage: boolean | undefined = undefined;
+  if (raw.pre_finished_room !== undefined) {
+    in_reward_stage = Boolean(raw.pre_finished_room && raw.pre_finished_room.is_pre_finished);
+  } else if (typeof raw.in_reward_stage === 'boolean') {
+    in_reward_stage = raw.in_reward_stage;
+  }
+
   return {
     run_id,
     is_multiplayer,
     player_count,
     players,
     floors,
-    run_status
+    run_status,
+    current_floor,
+    in_reward_stage
   };
 }

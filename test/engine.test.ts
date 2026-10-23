@@ -1,6 +1,7 @@
 import { FloorParser } from '../src/daemon/parser';
 import { DebtLedger } from '../src/daemon/ledger';
 import { PersistenceManager } from '../src/daemon/persistence';
+import { normalizeSaveData } from '../src/daemon/adapter';
 import { RawRunSaveData, RawFloorEntry } from '../src/shared/types';
 import fs from 'fs';
 import path from 'path';
@@ -392,8 +393,6 @@ function runTests() {
   stateNow = testLedger.getFullState();
   assert(stateNow.player_debts[0] === 28, `Floor 3 should auto-commit upon entering next floor (total 28 wc), got ${stateNow.player_debts[0]}`);
 
-  console.log('  ✓ Per-player reward stage pending, early commit lock-in, and reward-exit auto-commit verified');
-
   // 8. Test Per-Player Death Counter Stepper & Workout History Persistence
   testLedger.setPlayerDeaths(0, 3);
   stateNow = testLedger.getFullState();
@@ -404,6 +403,58 @@ function runTests() {
   assert(!!runEntry, 'run_immediate_test should exist in workout_history.json');
   assert(runEntry!.stage_history?.[runEntry!.stage_history!.length - 1].players[0].deaths === 3, 'Latest stage_history player deaths should be updated to 3');
   console.log('  ✓ Per-player death counter stepper updates active session and workout history cleanly');
+
+  // 9. Test Mid-Room Non-Combat Node Auto-Commit (StS2 appends event/shop/rest rooms only on exit)
+  // When player transitions from Floor 19 combat reward screen to Floor 20 event room:
+  // map_point_history still only has 19 entries, but visited_map_coords has 3 in Act 1 -> current_floor = 20, in_reward_stage = false.
+  const rawFloor19Save = {
+    run_id: 'run_mid_room_test',
+    current_act_index: 1,
+    map_point_history: [
+      new Array(17).fill({ map_point_type: 'monster', player_stats: [{ current_hp: 80, max_hp: 80, damage_taken: 0, player_id: 1 }], rooms: [{ room_type: 'monster', turns_taken: 3 }] }),
+      [
+        { map_point_type: 'ancient', player_stats: [{ current_hp: 80, max_hp: 80, damage_taken: 0, player_id: 1 }], rooms: [{ room_type: 'event', turns_taken: 0 }] },
+        { map_point_type: 'monster', player_stats: [{ current_hp: 65, max_hp: 80, damage_taken: 15, player_id: 1 }], rooms: [{ room_type: 'monster', turns_taken: 5 }] }
+      ]
+    ],
+    visited_map_coords: [{ col: 3, row: 0 }, { col: 0, row: 1 }],
+    pre_finished_room: { is_pre_finished: true },
+    players: [{ id: 1, name: 'Hero' }],
+    character: 'DEFECT'
+  };
+
+  const normalized19 = normalizeSaveData(rawFloor19Save);
+  assert(normalized19.current_floor === 19, `Floor 19 current_floor should be 19, got ${normalized19.current_floor}`);
+  assert(normalized19.in_reward_stage === true, 'Floor 19 should be in reward stage');
+
+  const midRoomLedger = new DebtLedger(testPersistence);
+  midRoomLedger.processSaveData(normalized19);
+  let midState = midRoomLedger.getFullState();
+  assert(midState.pending_player_floors?.[0]?.floor_num === 19, 'Floor 19 should be pending in reward stage');
+  assert(midState.last_processed_floor === 18, `last_processed_floor should be 18 during Floor 19 rewards, got ${midState.last_processed_floor}`);
+  const initialDebt = midState.player_debts[0] || 0;
+
+  // Player clicks next node on map to enter Floor 20 Event room:
+  // visited_map_coords now has 3 nodes. pre_finished_room is null. map_point_history STILL has only 19 entries!
+  const rawFloor20Save = {
+    ...rawFloor19Save,
+    visited_map_coords: [{ col: 3, row: 0 }, { col: 0, row: 1 }, { col: 0, row: 2 }],
+    pre_finished_room: null
+  };
+
+  const normalized20 = normalizeSaveData(rawFloor20Save);
+  assert(normalized20.current_floor === 20, `Floor 20 current_floor should be 20, got ${normalized20.current_floor}`);
+  assert(normalized20.in_reward_stage === false, 'Floor 20 should not be in reward stage');
+
+  const { commitData: autoCommit } = midRoomLedger.processSaveData(normalized20);
+  assert(!!autoCommit, 'Moving to Floor 20 must auto-commit Floor 19');
+  assert(autoCommit!.floor === 19, `Auto-commit floor should be 19, got ${autoCommit!.floor}`);
+
+  midState = midRoomLedger.getFullState();
+  assert(midState.last_processed_floor === 19, `last_processed_floor should advance to 19, got ${midState.last_processed_floor}`);
+  assert(Object.keys(midState.pending_player_floors || {}).length === 0, 'pending_player_floors should be cleared after auto-commit');
+  assert(midState.player_debts[0] === initialDebt + 25, `Player debt should have Floor 19 committed (initial + 25 wc), got ${midState.player_debts[0]}`);
+  console.log('  ✓ Mid-room non-combat node entry auto-commits prior floor without requiring overlay action');
 
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

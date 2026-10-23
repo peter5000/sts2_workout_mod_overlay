@@ -70,6 +70,8 @@ export interface RawRunSaveData {
   players: PlayerInfo[];
   floors: RawFloorEntry[];
   run_status: 'ACTIVE' | 'VICTORY' | 'DEFEAT';
+  current_floor?: number;
+  in_reward_stage?: boolean;
 }
 
 // Engine & State Ledger Data Contracts
