@@ -102,11 +102,11 @@ export class DebtLedger {
           : (currentFloor === pendingFloorNum);
 
         // Did the party finish reward picking and move on to the next floor?
-        // (Or did the run terminate?)
-        const partyMovedOn = currentFloor > pendingFloorNum ||
+        // (Or did the run terminate with VICTORY or DEFEAT?)
+        const partyMovedOn = isTerminal ||
+                             currentFloor > pendingFloorNum ||
                              maxFloorNum > pendingFloorNum ||
-                             (!inRewardStage && currentFloor >= pendingFloorNum) ||
-                             (isTerminal && maxFloorNum === pendingFloorNum && this.lastProcessedFloor < pendingFloorNum);
+                             (!inRewardStage && currentFloor >= pendingFloorNum);
 
         if (partyMovedOn) {
           // All players finished rewards and moved to the next floor!

@@ -2,7 +2,7 @@ import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetr
 import { getCombatDeathInfoFromLog, CombatDeathInfo } from './logReader';
 
 export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj?: any): string {
-  // 1. Check ID from raw player object (steam_id, account_id, id, net_id, player_id)
+  // 1. Gather candidate IDs from raw player object (steam_id, account_id, id, net_id, player_id)
   const candidateIds: (string | number)[] = [
     rawPlayerObj?.steam_id,
     rawPlayerObj?.account_id,
@@ -10,6 +10,15 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
     rawPlayerObj?.net_id,
     rawPlayerObj?.player_id
   ].filter((v) => v !== undefined && v !== null && v !== '');
+
+  // For the local player (idx 0), resolve local Steam ID from STS2_SAVE_DIR path if not present in player object
+  if (idx === 0) {
+    const saveDir = process.env.STS2_SAVE_DIR || '';
+    const match = saveDir.match(/steam[/\\](\d{15,})/i);
+    if (match && match[1] && !candidateIds.some(id => String(id) === match[1])) {
+      candidateIds.push(match[1]);
+    }
+  }
 
   for (const idVal of candidateIds) {
     const strId = String(idVal).trim();
@@ -27,20 +36,16 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
     return rawName.trim();
   }
 
-  // 3. If no candidate IDs exist (e.g. offline mock fixtures), check env by index
-  if (candidateIds.length === 0) {
-    const envKey = `PLAYER_NAME_${idx}`;
-    const envName = process.env[envKey];
-    if (envName && envName.trim().length > 0) {
-      return envName.trim();
-    }
-    return `Player ${idx + 1}`;
+  // 3. Check environment variable by player index (e.g. PLAYER_NAME_0) or DEFAULT_PLAYER_NAME for idx 0
+  const envByIndex = process.env[`PLAYER_NAME_${idx}`] || (idx === 0 ? (process.env.DEFAULT_PLAYER_NAME || process.env.LOCAL_PLAYER_NAME) : undefined);
+  if (envByIndex && envByIndex.trim().length > 0) {
+    return envByIndex.trim();
   }
 
-  // 4. Default fallback showing Steam ID or Player N
-  const primaryId = String(candidateIds[0]);
-  if (primaryId.length >= 16) {
-    return `Player ${idx + 1} (${primaryId.slice(-4)})`;
+  // 4. Default fallback showing Steam ID (last 4) or Player N
+  const primaryId = candidateIds.find(id => String(id).length >= 16);
+  if (primaryId) {
+    return `Player ${idx + 1} (${String(primaryId).slice(-4)})`;
   }
   return `Player ${idx + 1}`;
 }

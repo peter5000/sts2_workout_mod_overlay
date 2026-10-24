@@ -1,7 +1,7 @@
 import { FloorParser } from '../src/daemon/parser';
 import { DebtLedger } from '../src/daemon/ledger';
 import { PersistenceManager } from '../src/daemon/persistence';
-import { normalizeSaveData } from '../src/daemon/adapter';
+import { normalizeSaveData, getDefaultPlayerName } from '../src/daemon/adapter';
 import { RawRunSaveData, RawFloorEntry } from '../src/shared/types';
 import fs from 'fs';
 import path from 'path';
@@ -462,7 +462,39 @@ function runTests() {
   assert(midState.last_processed_floor === 19, `last_processed_floor should advance to 19, got ${midState.last_processed_floor}`);
   assert(Object.keys(midState.pending_player_floors || {}).length === 0, 'pending_player_floors should be cleared after auto-commit');
   assert(midState.player_debts[0] === initialDebt + 25, `Player debt should have Floor 19 committed (initial + 25 wc), got ${midState.player_debts[0]}`);
-  console.log('  ✓ Mid-room non-combat node entry auto-commits prior floor without requiring overlay action');
+  // 12. Steam ID and Player Name Mapping Resolution
+  const savedSaveDir = process.env.STS2_SAVE_DIR;
+  const savedName765 = process.env.PLAYER_NAME_10000000000000001;
+  const savedNameMP = process.env.PLAYER_NAME_10000000000000002;
+  const savedDefaultName = process.env.DEFAULT_PLAYER_NAME;
+
+  try {
+    process.env.STS2_SAVE_DIR = 'C:/Games/SlayTheSpire2/steam/10000000000000001/profile1/saves';
+    process.env.PLAYER_NAME_10000000000000001 = 'PlayerOne';
+    process.env.PLAYER_NAME_10000000000000002 = 'HostPlayerMP';
+
+    // A. Single player Godot save format where player object only has internal index { id: 1 }
+    // Must resolve Steam 64 ID from STS2_SAVE_DIR and map to 'PlayerOne'
+    const singlePlayerName = getDefaultPlayerName(0, undefined, { id: 1 });
+    assert(singlePlayerName === 'PlayerOne', `Single-player player 0 must resolve to 'PlayerOne' via save dir Steam ID, got '${singlePlayerName}'`);
+
+    // B. Multiplayer save format where player object has real 64-bit Steam ID in id
+    const mpPlayerName = getDefaultPlayerName(0, undefined, { id: '10000000000000002' });
+    assert(mpPlayerName === 'HostPlayerMP', `Multiplayer player must resolve to 'HostPlayerMP' via player.id, got '${mpPlayerName}'`);
+
+    // C. Fallback to DEFAULT_PLAYER_NAME when no Steam ID matches
+    delete process.env.PLAYER_NAME_10000000000000001;
+    process.env.DEFAULT_PLAYER_NAME = 'CustomFallback';
+    const fallbackName = getDefaultPlayerName(0, undefined, { id: 1 });
+    assert(fallbackName === 'CustomFallback', `Player 0 should fall back to DEFAULT_PLAYER_NAME, got '${fallbackName}'`);
+
+    console.log('  ✓ Steam ID path extraction, multiplayer ID resolution, and name mapping fallbacks verified');
+  } finally {
+    process.env.STS2_SAVE_DIR = savedSaveDir;
+    process.env.PLAYER_NAME_10000000000000001 = savedName765;
+    process.env.PLAYER_NAME_10000000000000002 = savedNameMP;
+    process.env.DEFAULT_PLAYER_NAME = savedDefaultName;
+  }
 
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

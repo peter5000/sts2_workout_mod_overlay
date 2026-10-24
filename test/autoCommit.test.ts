@@ -195,6 +195,81 @@ export function runAutoCommitTests() {
   assert(state3.player_debts[1] === 20, `P1 debt auto-commits at reduced 20 wc, got ${state3.player_debts[1]}`);
   console.log('  ✓ Early commit lock-in vs reward healing auto-commit verified');
 
+  // 4. Game Victory with Pending Boss Floor (e.g. Floor 49 Boss Reward Screen -> Run Victory)
+  const ledger4 = new DebtLedger(persistence);
+
+  const floor49Boss: RawFloorEntry = {
+    floor_num: 49,
+    room_type: 'boss',
+    total_combat_turns: 6,
+    player_metrics: [
+      { player_index: 0, player_name: 'Hero', hp_start: 75, hp_end: 39, died_this_floor: false, death_turn: null } // 6*2 + 36 = 48 wc
+    ]
+  };
+
+  // State A: Sitting in boss reward screen (pending 48 wc)
+  ledger4.processSaveData({
+    run_id: 'test_victory_pending_run',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'DEFECT' }],
+    run_status: 'ACTIVE',
+    floors: [floor49Boss],
+    current_floor: 49,
+    in_reward_stage: true
+  });
+
+  let state4 = ledger4.getFullState();
+  assert(state4.pending_player_floors?.[0]?.wc === 48, 'Floor 49 boss pending wc should be 48');
+  assert(state4.pending_player_floors?.[0]?.committed === false, 'Floor 49 boss pending committed should be false');
+  assert(state4.player_debts[0] === 0, 'Debt should not yet be committed');
+
+  // State B: Game transitions to VICTORY without manual floor commit
+  const { commitData: victoryCommit, terminatedEvent } = ledger4.processSaveData({
+    run_id: 'test_victory_pending_run',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'DEFECT' }],
+    run_status: 'VICTORY',
+    floors: [floor49Boss],
+    current_floor: 49,
+    in_reward_stage: false
+  });
+
+  assert(!!victoryCommit, 'Victory transition must trigger commitData for pending boss floor');
+  assert(victoryCommit!.floor === 49, `Victory commit floor should be 49, got ${victoryCommit!.floor}`);
+  assert(!!terminatedEvent, 'Victory transition must produce terminatedEvent');
+  assert(terminatedEvent!.data.outcome === 'VICTORY', 'Outcome should be VICTORY');
+  state4 = ledger4.getFullState();
+  assert(state4.player_debts[0] === 48, `Player debt should have Floor 49 boss accrued (48 wc), got ${state4.player_debts[0]}`);
+  assert(state4.last_processed_floor === 49, `last_processed_floor should advance to 49, got ${state4.last_processed_floor}`);
+  assert(Object.keys(state4.pending_player_floors || {}).length === 0, 'pending_player_floors must be cleared upon victory');
+  assert(state4.run_status === 'VICTORY', 'run_status should be VICTORY');
+  console.log('  ✓ Game victory with pending boss floor auto-commit and wc accrual verified');
+
+  // 5. Game Victory with Direct Final Floor (No Prior Reward State)
+  const ledger5 = new DebtLedger(persistence);
+
+  const { commitData: directVictoryCommit, terminatedEvent: directTerminated } = ledger5.processSaveData({
+    run_id: 'test_direct_victory_run',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'Hero', character: 'DEFECT' }],
+    run_status: 'VICTORY',
+    floors: [floor49Boss],
+    current_floor: 49,
+    in_reward_stage: false
+  });
+
+  assert(!!directVictoryCommit, 'Direct victory transition must produce commitData');
+  assert(directVictoryCommit!.floor === 49, 'Direct victory floor should be 49');
+  assert(!!directTerminated, 'Direct victory must produce terminatedEvent');
+  assert(directTerminated!.data.outcome === 'VICTORY', 'Direct victory outcome should be VICTORY');
+  const state5 = ledger5.getFullState();
+  assert(state5.player_debts[0] === 48, `Direct victory must accrue full boss wc (48 wc), got ${state5.player_debts[0]}`);
+  assert(state5.last_processed_floor === 49, 'last_processed_floor should be 49');
+  console.log('  ✓ Game victory with direct final boss floor wc accrual verified');
+
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
 
