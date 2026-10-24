@@ -60,6 +60,9 @@ const watcher = new SaveWatcher(saveDir, (saveData) => {
       }
     };
     console.log(`[DAEMON] Broadcasting RUN_DETECTED for run: ${saveData.run_id}`);
+    saveData.players.forEach((p, idx) => {
+      console.log(`[DAEMON]   - Player ${idx + 1} (Slot ${p.index}): "${p.name}" (${p.character})`);
+    });
     broadcast(runDetectedMsg);
   }
 

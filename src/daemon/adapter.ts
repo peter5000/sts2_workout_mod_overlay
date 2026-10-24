@@ -40,10 +40,10 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
     return envByIndex.trim();
   }
 
-  // 4. Default fallback showing Steam ID (last 4) or Player N
+  // 4. Default fallback showing full Steam ID so players can easily identify and register it
   const primaryId = candidateIds.find(id => String(id).length >= 16);
   if (primaryId) {
-    return `Player ${idx + 1} (${String(primaryId).slice(-4)})`;
+    return `Player ${idx + 1} (${String(primaryId)})`;
   }
   return `Player ${idx + 1}`;
 }
