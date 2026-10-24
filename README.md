@@ -303,6 +303,14 @@ The daemon replays past floors from your run history to calculate your current d
 <details>
 <summary><b>Technical Details & Architecture (Click to expand)</b></summary>
 
+### Documentation Guides
+
+For in-depth architectural specifications and developer deep-dives, refer to the documents in the `docs/` directory:
+- [Architecture Specification](docs/architecture.md): Complete system architecture, equations, window management, and REST/WebSocket API contracts.
+- [Component Flow & Sequence Deep-Dive](docs/daemon_component_flow.md): Component breakdown, death detection pipeline, and sequence diagrams.
+- [Codebase Walkthrough](docs/walkthrough.md): Comprehensive developer tour of the codebase, core modules, and testing workflows.
+- [Slay the Spire 2 Engine Facts](docs/slay_the_spire_facts.md): Verified engine behaviors, save mechanics, and log signatures.
+
 ### Exercise Debt Equation
 
 At the end of each floor $f$, each player $p$ accrues a workout counter value ($wc_p$):

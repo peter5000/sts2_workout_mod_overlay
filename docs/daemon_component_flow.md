@@ -47,13 +47,13 @@ flowchart TD
 
 | # | Subsystem | File Path | Primary Responsibility |
 |---|---|---|---|
-| **1** | **Save Watcher** | [`src/daemon/watcher.ts`](../src/daemon/watcher.ts) | Observes `%APPDATA%` saves directory using `chokidar`. Debounces disk writes (75ms), performs exponential file-lock retry, SHA-256 hashes content to drop duplicate events, pre-sanitizes 64-bit integer IDs, and delegates parsing to the Save Adapter. |
-| **2** | **Save Adapter** | [`src/daemon/adapter.ts`](../src/daemon/adapter.ts) | Normalizes native Godot save dictionaries (`map_point_history`) into standardized `RawRunSaveData`. Chains sequential HP, isolates floor 0 relic self-damage from Weary Traveler, resolves friendly names from `.env`, calls the Combat Log Reader to enrich mid-combat deaths, and delivers standardized data to the Debt Ledger. |
+| **1** | **Save Watcher** | [`src/daemon/watcher.ts`](../src/daemon/watcher.ts) | Observes `%APPDATA%` saves directory using `chokidar`. Debounces disk writes (75ms), performs exponential file-lock retry, SHA-256 hashes content to drop duplicate events, pre-sanitizes 64-bit integer IDs, watches `.env` for dynamic player name reloads, and delegates parsing to the Save Adapter. |
+| **2** | **Save Adapter** | [`src/daemon/adapter.ts`](../src/daemon/adapter.ts) | Normalizes native Godot save dictionaries (`map_point_history`) into standardized `RawRunSaveData`. Chains sequential HP, isolates floor 0 relic self-damage from Weary Traveler, resolves friendly names from `.env` via `PLAYER_NAME_<ID>`, calls the Combat Log Reader for mid-combat deaths (solely from `godot.log`), and delivers standardized data to the Debt Ledger. |
 | **3** | **Combat Log Reader** | [`src/daemon/logReader.ts`](../src/daemon/logReader.ts) | Invoked by the Save Adapter. Reads the tail of `godot.log` in reverse chunks (up to 2MB). Extracts player turn numbers (`EndPlayerTurnAction`) and player death timestamps (`Player X died, doing death handling`) to return `CombatDeathInfo` back to the Save Adapter. |
-| **4** | **Debt Ledger** | [`src/daemon/ledger.ts`](../src/daemon/ledger.ts) | Authoritative state container. Holds player debts, deaths, squat remainders, squat ratios, and run statuses. Deduplicates floors (`lastProcessedFloor`), processes rep reductions (`CUSTOM_ENTRY`, `ALL_PUSHUPS`, `ALL_SQUATS`), and manages stage history. |
-| **5** | **Floor Parser** | [`src/daemon/parser.ts`](../src/daemon/parser.ts) | Pure mathematical calculation engine. Implements $wc_p = n_p(2 + d_p) + h_p$. Freezes turns at the exact round of death, updates death penalties, calculates positive HP loss, and handles defeat combat debt. |
+| **4** | **Debt Ledger** | [`src/daemon/ledger.ts`](../src/daemon/ledger.ts) | Authoritative state container. Holds player debts, deaths, squat remainders, squat ratios, and run statuses. Manages pending reward screen floors (`pendingPlayerFloors`), dynamic reward healing offsets, floor deduplication (`lastProcessedFloor`), rep reductions (`CUSTOM_ENTRY`, `ALL_PUSHUPS`, `ALL_SQUATS`), and stage history. |
+| **5** | **Floor Parser** | [`src/daemon/parser.ts`](../src/daemon/parser.ts) | Pure mathematical calculation engine. Implements $wc_p = n_p(2 + d_p) + h_p$. Freezes turns at the exact round of death, evaluates death penalties prior to current floor, calculates positive HP loss, and handles defeat combat waiver. |
 | **6** | **Persistence Manager** | [`src/daemon/persistence.ts`](../src/daemon/persistence.ts) | Crash-proof atomic disk persistence. Writes data to `.tmp` files and renames them synchronously (`fs.renameSync`) to prevent corrupted reads during game crashes or reboots. Manages `active_session.json` and `workout_history.json`. |
-| **7** | **Broadcast Hub & REST** | [`src/daemon/index.ts`](../src/daemon/index.ts) | Express HTTP server and WebSocket relay listening on `0.0.0.0:8765`. Handles incoming player actions (`resolve`, `ratio`, `commit-pending`) and broadcasts state events (`RUN_DETECTED`, `WORKOUT_FLOOR_COMMITTED`, `RUN_TERMINATED`, `STATE_UPDATE`). |
+| **7** | **Broadcast Hub & REST** | [`src/daemon/index.ts`](../src/daemon/index.ts) | Express HTTP server and WebSocket relay listening on `0.0.0.0:8765`. Handles incoming player actions (`resolve`, `ratio`, `commit-pending`, `deaths`) and broadcasts state events (`RUN_DETECTED`, `WORKOUT_FLOOR_COMMITTED`, `RUN_TERMINATED`, `STATE_UPDATE`). |
 
 ---
 
@@ -89,18 +89,26 @@ if (deathMatch) {
 return { diedPlayers, deathTurns, playerLastTurns, maxCombatTurn };
 ```
 
-### Step 3: Save Adapter Enriches Floor Metrics ([`src/daemon/adapter.ts#L225-L274`](../src/daemon/adapter.ts#L225-L274))
-The Save Adapter receives `logInfo` and attaches the frozen `death_turn` into the floor metrics:
+### Step 3: Save Adapter Enriches Floor Metrics ([`src/daemon/adapter.ts#L245-L270`](../src/daemon/adapter.ts#L245-L270))
+The Save Adapter receives `logInfo` and evaluates player death **solely from engine log events**:
 ```typescript
-// Checks if the player registered death in godot.log OR by 0 HP in save checkpoint
-const isDiedFromLog = isCombat && logInfo && candidateIds.some((id) => logInfo.diedPlayers.has(id));
-const isDeadByHp = isCombat && (stat?.current_hp === 0 || hp_end === 0);
+// Match player candidate IDs against diedPlayers parsed from godot.log
+const isDiedFromLog = Boolean(
+  isLastFloor &&
+  isCombat &&
+  logInfo &&
+  candidateIds.some((id) => logInfo!.diedPlayers.has(id))
+);
 
-const died_this_floor = Boolean(stat?.died || stat?.died_this_floor || isDeadByHp || isDiedFromLog);
+// Death detection is SOLELY based on godot.log engine events:
+// In StS2, true player death logs 'Player X died, doing death handling'.
+// Fairy in a Bottle and Lizard Tail mid-combat revives do NOT log death handling and do NOT count as deaths.
+// Save file HP stats are NOT used for death detection (prevents false positives from uninitialized reward screens).
+const died_this_floor = isDiedFromLog;
 
 // Freezes the turn count at the round of death
 const death_turn = died_this_floor
-  ? (logDeathTurn ?? stat?.death_turn ?? stat?.turn_died ?? stat?.turns_survived ?? total_combat_turns)
+  ? (typeof logDeathTurn === 'number' ? logDeathTurn : total_combat_turns)
   : null;
 ```
 The Save Adapter returns `RawRunSaveData` to the Save Watcher callback, which delivers it to `DebtLedger.processSaveData()`.
@@ -118,14 +126,15 @@ if (!isNonCombat) {
   }
 }
 
-// 2. Increment cumulative deaths (d_p)
+// 2. Compute formula: wc_p = n_p * (2 + currentDeaths) + hpLostH
+// Note: currentDeaths is the death count PRIOR to this floor.
+const countersAdded = turnsTakenN * (2 + currentDeaths) + hpLostH;
+
+// 3. Increment cumulative deaths (d_p) for subsequent floors
 const newDeathsD = metric.died_this_floor ? currentDeaths + 1 : currentDeaths;
 if (metric.died_this_floor) {
   playerDeathCounts.set(idx, newDeathsD);
 }
-
-// 3. Compute formula: wc_p = n_p * (2 + d_p) + h_p
-const countersAdded = turnsTakenN * (2 + currentDeaths) + hpLostH;
 ```
 
 ---
@@ -153,18 +162,24 @@ sequenceDiagram
     Log-->>Adapter: CombatDeathInfo (diedPlayers, deathTurns)
     Adapter-->>Watcher: RawRunSaveData (Standardized floors)
     Watcher->>Ledger: processSaveData(runData)
-    
-    loop For each unprocessed floor (floor_num > lastProcessedFloor)
+
+    alt Floor In Reward Stage (pre_finished_room)
+        Note over Ledger: Floor held as pendingPlayerFloors
+        Ledger-->>Watcher: rewardStageEntered
+        Watcher->>Hub: broadcast(STATE_UPDATE)
+        Hub->>HUD: WebSocket message
+        HUD->>HUD: Render "Commit Floor Now" banner & pending reps
+        Note over Game,HUD: Any reward healing received dynamically reduces hp_lost
+    else Floor Exited or Committed Early
         Ledger->>Parser: parseFloor(floorEntry, deaths, debts, ratios)
         Parser-->>Ledger: PlayerFloorReport list (wc, formula, debts)
         Ledger->>Persist: recordFloorStage(floor, snapshot)
+        Ledger->>Persist: saveActiveSessions(runId, state)
+        Ledger-->>Watcher: commitData, terminatedEvent
+        Watcher->>Hub: broadcast(WORKOUT_FLOOR_COMMITTED)
+        Hub->>HUD: WebSocket message
+        HUD->>HUD: Render updated debt and rep clearance buttons
     end
-
-    Ledger->>Persist: saveActiveSessions(runId, state)
-    Ledger-->>Watcher: commitData, terminatedEvent
-    Watcher->>Hub: broadcast(WORKOUT_FLOOR_COMMITTED)
-    Hub->>HUD: WebSocket message
-    HUD->>HUD: Render updated debt and rep clearance buttons
 ```
 
 ---
@@ -175,14 +190,16 @@ sequenceDiagram
 
 ```
 DebtLedger
- ├── runId: string                         (e.g., "run_1791595114")
- ├── isMultiplayer: boolean                (true if co-op lobby)
- ├── lastProcessedFloor: number            (e.g., 6)
- ├── playerDebts: Map<number, number>      (0 -> 14 wc, 1 -> 8 wc)
- ├── playerDeaths: Map<number, number>     (0 -> 0 deaths, 1 -> 1 death)
- ├── playerAggregates: Map<number, obj>    (0 -> { accrued: 52, pushups: 38, squats: 0 })
- ├── playerSquatRemainders: Map<number, n> (0 -> 1 remainder when R=3)
- ├── playerSquatRatios: Map<number, n>     (0 -> 3, 1 -> 2)
- ├── activeSessionsMap: Map<string, Store> (Enables switching between SP and MP runs)
- └── pendingFloorEntry: RawFloorEntry?     (Floor held during reward screen)
+ ├── runId: string                                (e.g., "run_1791595114")
+ ├── isMultiplayer: boolean                       (true if co-op lobby)
+ ├── lastProcessedFloor: number                   (e.g., 6)
+ ├── playerDebts: Map<number, number>             (0 -> 14 wc, 1 -> 8 wc)
+ ├── playerDeaths: Map<number, number>            (0 -> 0 deaths, 1 -> 1 death)
+ ├── playerAggregates: Map<number, obj>           (0 -> { accrued: 52, pushups: 38, squats: 0 })
+ ├── playerSquatRemainders: Map<number, number>   (0 -> 1 remainder when R=3)
+ ├── playerSquatRatios: Map<number, number>       (0 -> 3, 1 -> 2)
+ ├── playerNames: Map<number, string>             (0 -> "PlayerOne", 1 -> "PlayerTwo")
+ ├── activeSessionsMap: Map<string, Store>        (Enables switching between SP and MP runs)
+ ├── pendingFloorEntry: RawFloorEntry | null      (Floor held during reward screen)
+ └── pendingPlayerFloors: Map<number, Pending>    (Pending uncommitted metrics per player)
 ```

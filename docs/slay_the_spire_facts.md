@@ -59,3 +59,9 @@ This document serves as the single source of truth for all verified Slay the Spi
   - Players can choose to manually commit their floor debt during the reward stage to do reps immediately.
   - Once committed, subsequent reward screen healing (potions, relics) cannot reduce their debt.
   - If a player does not manually commit, any reward screen healing reduces their pending HP loss ($h_p$), and the floor auto-commits immediately upon moving to the next node.
+
+### C. Game End / Victory Encounter Ingestion Rule
+* **Run Unlink on Victory**: When the game is won (`run_status === 'VICTORY'`), StS2 unlinks `current_run.save` and saves the completed run record in `history/<timestamp>.run`.
+* **Full Boss Debt Accrual**: The final boss combat encounter accrues full workout counter ($wc$) unconditionally upon victory, regardless of whether players manually committed during the reward screen.
+* **No Lost Reps**: The debt ledger automatically records and commits the victory floor's metrics before firing the terminal event, ensuring all reps from the climax battle are tallied in the final session summary.
+

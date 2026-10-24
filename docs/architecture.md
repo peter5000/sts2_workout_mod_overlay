@@ -48,7 +48,7 @@ The **StS2 Workout Mode Helper** is an out-of-process, zero-mod companion daemon
 ### 2.1 Per-Player Attribution
 All workout counters, HP deltas, turn survivals, death penalties, and squat conversion ratios are tracked **per individual player**. Party members do not share a pooled debt or synced ratio; each player bears individual accountability for their own combat performance and customized exercise parameters.
 
-Implementation reference: [`src/daemon/parser.ts`](./src/daemon/parser.ts#L15-L80).
+Implementation reference: [`src/daemon/parser.ts`](../src/daemon/parser.ts#L15-L80).
 
 ### 2.2 Floor Calculation Equation
 At the conclusion of each floor $f$, each player $p$ accrues a workout counter value ($wc_p$):
@@ -65,6 +65,7 @@ Where:
   $$h_p = \max(\text{HP}_{p, \text{start}} - \text{HP}_{p, \text{end}}, 0)$$
   *Healing, relic procs, or net HP increases yield $h_p = 0$.*
 * **Game Defeat Combat Waiver:** On full game defeat (`run_status === 'DEFEAT'`), the final losing combat floor where the party wipes has its workout counters waived ($wc_p = 0$). Players are not penalized with push-up/squat debt for the battle that ended the run; prior floors' debt is preserved and the 30-minute jog penalty applies.
+* **Game Victory Climax Battle Accrual:** On game victory (`run_status === 'VICTORY'`), the final boss battle accrues full workout debt ($wc_p$) automatically without waiver, ensuring all celebration reps are tallied in the final session summary.
 
 ### 2.3 Sequential Floor HP Tracking & Floor 0 Rules
 To accurately calculate $h_p$ across floors with post-combat healing relics, the adapter chains floor entries sequentially:
@@ -74,7 +75,7 @@ To accurately calculate $h_p$ across floors with post-combat healing relics, the
 * **Subsequent Floors:** Floor entry HP ($\text{HP}_{\text{start}}$) is derived from the preceding floor's exit HP ($\text{HP}_{\text{end}}$), guaranteeing that heal events and combat damage are accurately isolated.
 * **Final Combat in Defeat:** On full game defeat, although the lethal battle registers $\text{HP}_{\text{end}} = 0$ for analytical and stage history accuracy, the workout counters ($wc_p$) for this wipe battle are waived ($0\ wc$), avoiding double-penalizing the party with both exercise counters and the 30-minute defeat jog penalty.
 
-Implementation reference: [`src/daemon/adapter.ts`](./src/daemon/adapter.ts#L145-L185).
+Implementation reference: [`src/daemon/adapter.ts`](../src/daemon/adapter.ts#L145-L185).
 
 ### 2.4 Per-Player Squat Ratio & Fractional Remainder ($R_p \ge 1$)
 Each player configures their own independent conversion ratio $R_p$:
@@ -84,7 +85,7 @@ Logging custom squats that do not evenly divide by $R_p$ stores the fractional r
 $$\text{Remainder}_{p, \text{new}} = (\text{Remainder}_{p, \text{old}} + \text{Squats}) \bmod R_p$$
 $$\text{Debt Deducted}_p = \min\left( \left\lfloor \frac{\text{Remainder}_{p, \text{old}} + \text{Squats}}{R_p} \right\rfloor, \text{Debt}_p \right)$$
 
-Implementation reference: [`src/daemon/ledger.ts`](./src/daemon/ledger.ts#L125-L195).
+Implementation reference: [`src/daemon/ledger.ts`](../src/daemon/ledger.ts#L125-L195).
 
 ### 2.5 Capped Custom Rep Logging
 To prevent accidental over-logging from artificially inflating completed rep counts:
@@ -118,7 +119,8 @@ Logging reps when active debt is 0 will not credit surplus push-ups or squats.
 │  │                                                                        │  │
 │  │   ┌────────────────────────────────┐                                   │  │
 │  │   │ 1. Save Watcher (watcher.ts)   │ ◄── 75ms debounce, atomic lock    │  │
-│  │   │    Targeted Startup Scan       │     retry, selects newest mtime   │  │
+│  │   │    Targeted Startup Scan       │     retry, selects newest mtime,  │  │
+│  │   │                                │     watches .env for live reload  │  │
 │  │   └───────────────┬────────────────┘                                   │  │
 │  │                   ▼                                                    │  │
 │  │   ┌────────────────────────────────┐                                   │  │
@@ -157,22 +159,23 @@ Logging reps when active debt is 0 will not credit surplus push-ups or squats.
 * **File Observer (`src/daemon/watcher.ts`):** Listens to `%APPDATA%\SlayTheSpire2\steam\<YOUR_STEAM_ID_HERE>\profile1\saves\`.
 * **Startup Active File Priority:** Configured with `depth: 1` and `ignoreInitial: true` to prevent historical completed runs in `history/*.run` from triggering false defeat states.
 * **Targeted Initial Scan:** On startup, `scanInitialActiveSave()` inspects both `current_run_mp.save` and `current_run.save`, selecting the active run with the newest modification timestamp (`mtimeMs`).
+* **Live Configuration Hot-Reload:** Uses an independent `chokidar` file watcher on `.env`. Whenever `.env` is updated (e.g. player names added or modified), the watcher reloads `dotenv` with `override: true` and pushes updated player names to connected HUDs without requiring a daemon restart.
 * **Run Termination Trigger:** When `current_run_mp.save` is deleted upon victory or death (`unlink`), the watcher queries `history/` after a 300ms delay to extract final run outcome data.
 
-Implementation reference: [`src/daemon/watcher.ts`](./src/daemon/watcher.ts#L20-L95).
+Implementation reference: [`src/daemon/watcher.ts`](../src/daemon/watcher.ts#L20-L95).
 
 ### 4.2 Native Godot Save Normalization
 * **Format Ingestion (`src/daemon/adapter.ts`):** Ingests Godot 4.5+ dictionary format from StS2 saves, extracting seed, start time, game mode, player character IDs, and `map_point_history`.
 * **Room Type Normalization:** Maps native room strings (`weak_monster`, `normal`, `elite`, `boss`, `rest_site`, `merchant`) to canonical types (`monster`, `elite`, `boss`, `campfire`, `shop`, `event`).
-* **Player Name Resolution:** Evaluates player display names from environment variables (`PLAYER_ID_<SteamID>`, `PLAYER_NAME_<idx>`), save file names, or generic fallbacks (`Player 1`, `Player 2`). Personal Steam IDs are omitted from code and git commits.
+* **Player Name Resolution:** Evaluates player display names using the single standard key schema `PLAYER_NAME_<ID>` (where `<ID>` matches the 17-digit Steam ID or 0-indexed player slot `PLAYER_NAME_<idx>`). For local host player 0, the adapter automatically extracts the Steam ID from the `STS2_SAVE_DIR` path if not directly provided in the save file. If no custom name is mapped, it falls back to `Player N (<last 4>)` or `Player N`. Personal Steam IDs and names are omitted from code and git commits.
 
-Implementation reference: [`src/daemon/adapter.ts`](./src/daemon/adapter.ts#L1-L100).
+Implementation reference: [`src/daemon/adapter.ts`](../src/daemon/adapter.ts#L1-L100).
 
 ### 4.3 Multi-Run Session Persistence & History Ledger
 * **Active Sessions Store (`src/daemon/persistence.ts`):** `ActiveSessionsMapStore` saves active runs by `run_id` in `active_session.json`. Players can switch between Single-Player (`current_run.save`) and Multiplayer (`current_run_mp.save`) without losing accumulated debt, reps, or remainders.
 * **Preservation on Termination:** When a run finishes (`VICTORY` or `DEFEAT`), the ledger maintains completed session stats in memory and appends a permanent record with per-player `party_summary` breakdowns to `workout_history.json`.
 
-Implementation reference: [`src/daemon/persistence.ts`](./src/daemon/persistence.ts#L20-L90) and [`src/daemon/ledger.ts`](./src/daemon/ledger.ts#L270-L315).
+Implementation reference: [`src/daemon/persistence.ts`](../src/daemon/persistence.ts#L20-L90) and [`src/daemon/ledger.ts`](../src/daemon/ledger.ts#L270-L315).
 
 ### 4.4 Multiplayer Relay & Remote Tunneling
 * **Daemon Binding (`src/daemon/index.ts`):** Binds to `0.0.0.0:8765`, enabling remote connections across local Wi-Fi, Tailscale VPNs, or public ngrok tunnels.
@@ -182,8 +185,8 @@ Implementation reference: [`src/daemon/persistence.ts`](./src/daemon/persistence
   * Persists custom host addresses in `localStorage` across restarts.
 * **Protocol & Tunnel Normalization:** Automatically routes `http/ws` for IP addresses and `https/wss` for ngrok/tunnel domains.
 * **Chromium SSL & Ngrok Warning Bypass:**
-  * In [`src/overlay/main.ts`](./src/overlay/main.ts#L10-L20), `app.commandLine.appendSwitch('ignore-certificate-errors')` and `certificate-error` bypass handlers prevent Chromium `net_error -100` SSL handshake aborts.
-  * In [`src/overlay/renderer.tsx`](./src/overlay/renderer.tsx#L70-L80), all REST requests include `'ngrok-skip-browser-warning': 'true'` headers to bypass free-tier ngrok landing pages.
+  * In [`src/overlay/main.ts`](../src/overlay/main.ts#L10-L20), `app.commandLine.appendSwitch('ignore-certificate-errors')` and `certificate-error` bypass handlers prevent Chromium `net_error -100` SSL handshake aborts.
+  * In [`src/overlay/renderer.tsx`](../src/overlay/renderer.tsx#L70-L80), all REST requests include `'ngrok-skip-browser-warning': 'true'` headers to bypass free-tier ngrok landing pages.
 
 ### 4.5 Dual Window Management & DWM Pinning
 * **Dual Independent Windows (`src/overlay/main.ts`):**
@@ -195,7 +198,7 @@ Implementation reference: [`src/daemon/persistence.ts`](./src/daemon/persistence
   * `Ctrl+Shift+X`: Toggles mouse click-through mode for all overlay panels.
   * `Ctrl+Shift+Z`: Forces overlay windows to frontmost z-order position.
 
-Implementation reference: [`src/overlay/main.ts`](./src/overlay/main.ts#L30-L115).
+Implementation reference: [`src/overlay/main.ts`](../src/overlay/main.ts#L30-L115).
 
 ---
 
@@ -204,10 +207,12 @@ Implementation reference: [`src/overlay/main.ts`](./src/overlay/main.ts#L30-L115
 ### 5.1 Panel A: Remainder Resolver (Debt Management)
 * **Active Player Selector:** Dropdown displaying player names (`HostPlayer (Host)`, `GuestPlayer`).
 * **Remaining Workout Count:** Displays unresolved debt ($wc$) with dynamic color feedback (green when 0, red when > 0).
-* **Custom Reps Input:** Input box with `Log Push-ups` and `Log Squats` action buttons.
+* **Pending Floor Reward Banner & Early Commit:** During combat reward screens, displays pending workout debt, allows reward heals to dynamically reduce rep debt, and features a **Commit Floor Now** button allowing players to lock in and clear reps early before choosing their card/relic rewards.
+* **Custom Reps Input:** Stepper input box with `−` and `+` adjustment buttons alongside `Log Push-ups` and `Log Squats` action buttons.
 * **Bulk Clearance Buttons:**
-  * `All Push-ups (wc)`: Clears entire debt with push-ups.
-  * `All Squats (wc * R)`: Clears entire debt with squats according to ratio $R$.
+  * `All Push-ups (<reps>)`: Clears entire debt with push-ups.
+  * `All Squats (<reps>)`: Clears entire debt with squats according to ratio $R$.
+
 
 ### 5.2 Panel B: Aggregate Ledger (Run Totals)
 * **Stat Grid:** Displays total push-ups completed, total squats completed, and remaining unpaid counters.
@@ -220,7 +225,7 @@ Implementation reference: [`src/overlay/main.ts`](./src/overlay/main.ts#L30-L115
    * **Defeat Screen:** Triggers the mandatory 30-minute jog penalty with a ticking 24-hour countdown timer (`23:59:59`) and complete party summary table.
 3. **Daemon Host Configuration Modal:** Allows remote guests to configure host IP addresses or ngrok tunnel endpoints directly from the HUD.
 
-Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.tsx#L160-L460).
+Implementation reference: [`src/overlay/renderer.tsx`](../src/overlay/renderer.tsx#L160-L460).
 
 ---
 
@@ -321,6 +326,8 @@ Implementation reference: [`src/overlay/renderer.tsx`](./src/overlay/renderer.ts
 | `/api/v1/session/start` | `POST` | `{ "opt_in": true, "squat_ratio": 2 }` | Confirms session opt-in and starting ratio. |
 | `/api/v1/workout/resolve` | `POST` | `{ "player_index": 0, "action_type": "CUSTOM_ENTRY", "exercise": "pushups", "reps": 10 }` | Submits rep deductions. |
 | `/api/v1/config/ratio` | `POST` | `{ "player_index": 0, "squat_ratio": 3 }` | Dynamically updates squat ratio $R_p$ for a specific player (or globally if omitted). |
+| `/api/v1/session/commit-pending` | `POST` | `{ "player_index": 0 }` (optional) | Manually commits pending reward screen floor debt early (for specific player or entire party). |
+| `/api/v1/config/deaths` | `POST` | `{ "player_index": 0, "deaths": 2 }` | Directly adjusts a player's cumulative death penalty counter. |
 
 ---
 
