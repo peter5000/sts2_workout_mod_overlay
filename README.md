@@ -1,6 +1,7 @@
-# Slay the Spire 2 Workout Mode Overlay
+# Slay the Spire 2 Workout Mode Overlay (v1.5.0 Final)
 
 > The all-in-one workout companion for Slay the Spire 2. Level up your real-life fitness while having fun climbing the Spire, solo or with friends!
+
 
 ---
 
@@ -310,6 +311,7 @@ For in-depth architectural specifications and developer deep-dives, refer to the
 - [Component Flow & Sequence Deep-Dive](docs/daemon_component_flow.md): Component breakdown, death detection pipeline, and sequence diagrams.
 - [Codebase Walkthrough](docs/walkthrough.md): Comprehensive developer tour of the codebase, core modules, and testing workflows.
 - [Slay the Spire 2 Engine Facts](docs/slay_the_spire_facts.md): Verified engine behaviors, save mechanics, and log signatures.
+- [Changelog & Versioning Policy](CHANGELOG.md): Release history and maintenance roadmap (v1.5.x for bug fixes, v2.x.x for new features).
 
 ### Exercise Debt Equation
 

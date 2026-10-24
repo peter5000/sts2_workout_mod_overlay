@@ -1,5 +1,7 @@
 // Slay the Spire 2 Workout Mode Overlay - Shared Types & Data Contracts
 
+export const APP_VERSION = '1.5.0';
+
 export interface PlayerInfo {
   index: number;
   name: string;

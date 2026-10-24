@@ -39,7 +39,7 @@ sts2_workout_mod/
 │   ├── rewardStage.test.ts       # Pending reward stage healing offsets and early commit lock-in verification
 │   └── roomTracking.test.ts      # Visited map coordinate and current floor calculation verification
 ├── docs/
-│   ├── architecture.md           # Full technical design & lifecycle specification (v1.3.0)
+│   ├── architecture.md           # Full technical design & lifecycle specification (v1.5.0 Final)
 │   ├── daemon_component_flow.md  # Detailed component-by-component data flow and sequence diagrams
 │   ├── implementation_plan.md    # Initial engineering roadmap and milestone tracking
 │   ├── slay_the_spire_facts.md   # Verified StS2 engine mechanics, save conventions, and log signatures

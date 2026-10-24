@@ -1,4 +1,4 @@
-# Slay the Spire 2: Workout Mode Overlay (v1.3.0 Architecture Specification)
+# Slay the Spire 2: Workout Mode Overlay (v1.5.0 Final Architecture Specification)
 
 ## 1. System & Game Lifecycle Overview
 
