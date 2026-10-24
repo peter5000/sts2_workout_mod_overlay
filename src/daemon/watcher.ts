@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import chokidar from 'chokidar';
+import dotenv from 'dotenv';
 import { RawRunSaveData } from '../shared/types';
 import { normalizeSaveData } from './adapter';
 
@@ -10,6 +11,8 @@ export type SaveFileChangeCallback = (data: RawRunSaveData) => void;
 export class SaveWatcher {
   private targetDir: string;
   private watcher: chokidar.FSWatcher | null = null;
+  private envWatcher: chokidar.FSWatcher | null = null;
+  private lastFilePath: string | null = null;
   private lastSHA256: string = '';
   private debounceTimer: NodeJS.Timeout | null = null;
   private isProcessing: boolean = false;
@@ -57,6 +60,19 @@ export class SaveWatcher {
     this.watcher.on('add', triggerFileCheck);
     this.watcher.on('change', triggerFileCheck);
     this.watcher.on('unlink', handleUnlink);
+
+    // Watch .env for live configuration / player name updates
+    const envFilePath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(envFilePath)) {
+      this.envWatcher = chokidar.watch(envFilePath, { persistent: true });
+      this.envWatcher.on('change', () => {
+        console.log('[SAVE WATCHER] .env modification detected. Reloading player names...');
+        try {
+          dotenv.config({ override: true });
+        } catch {}
+        this.reloadCurrent();
+      });
+    }
 
     // Initial targeted scan for newest active save file
     this.scanInitialActiveSave();
@@ -139,6 +155,17 @@ export class SaveWatcher {
       this.watcher.close();
       this.watcher = null;
     }
+    if (this.envWatcher) {
+      this.envWatcher.close();
+      this.envWatcher = null;
+    }
+  }
+
+  public reloadCurrent(): void {
+    if (this.lastFilePath && fs.existsSync(this.lastFilePath)) {
+      this.lastSHA256 = '';
+      this.scheduleDebouncedRead(this.lastFilePath);
+    }
   }
 
   private scheduleDebouncedRead(filePath: string): void {
@@ -188,6 +215,7 @@ export class SaveWatcher {
     }
 
     this.lastSHA256 = hash;
+    this.lastFilePath = filePath;
 
     try {
       // Pre-sanitize 64-bit integer IDs (15+ digits) into strings to prevent JavaScript IEEE 754 precision loss

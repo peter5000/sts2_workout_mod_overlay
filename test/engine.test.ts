@@ -10,6 +10,7 @@ import { runRoomTrackingTests } from './roomTracking.test';
 import { runAutoCommitTests } from './autoCommit.test';
 import { runDeathDetectionTests } from './deathDetection.test';
 import { runRewardStageTests } from './rewardStage.test';
+import { runGameLifecycleTests } from './gameLifecycle.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -25,6 +26,7 @@ function runTests() {
   runAutoCommitTests();
   runDeathDetectionTests();
   runRewardStageTests();
+  runGameLifecycleTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
@@ -471,7 +473,8 @@ function runTests() {
   try {
     process.env.STS2_SAVE_DIR = 'C:/Games/SlayTheSpire2/steam/10000000000000001/profile1/saves';
     process.env.PLAYER_NAME_10000000000000001 = 'PlayerOne';
-    process.env.PLAYER_NAME_10000000000000002 = 'HostPlayerMP';
+    process.env.PLAYER_NAME_10000000000000002 = 'PlayerTwo';
+    process.env.PLAYER_NAME_10000000000000003 = 'PlayerThree';
 
     // A. Single player Godot save format where player object only has internal index { id: 1 }
     // Must resolve Steam 64 ID from STS2_SAVE_DIR and map to 'PlayerOne'
@@ -479,21 +482,26 @@ function runTests() {
     assert(singlePlayerName === 'PlayerOne', `Single-player player 0 must resolve to 'PlayerOne' via save dir Steam ID, got '${singlePlayerName}'`);
 
     // B. Multiplayer save format where player object has real 64-bit Steam ID in id
-    const mpPlayerName = getDefaultPlayerName(0, undefined, { id: '10000000000000002' });
-    assert(mpPlayerName === 'HostPlayerMP', `Multiplayer player must resolve to 'HostPlayerMP' via player.id, got '${mpPlayerName}'`);
+    const mpAlly1 = getDefaultPlayerName(1, undefined, { id: '10000000000000002' });
+    assert(mpAlly1 === 'PlayerTwo', `Multiplayer player must resolve to 'PlayerTwo' via player.id, got '${mpAlly1}'`);
 
-    // C. Fallback to DEFAULT_PLAYER_NAME when no Steam ID matches
+    const mpAlly2 = getDefaultPlayerName(2, undefined, { id: '10000000000000003' });
+    assert(mpAlly2 === 'PlayerThree', `Multiplayer player must resolve to 'PlayerThree' via player.id, got '${mpAlly2}'`);
+
+    // C. Single standard key schema fallback by index: PLAYER_NAME_0
     delete process.env.PLAYER_NAME_10000000000000001;
-    process.env.DEFAULT_PLAYER_NAME = 'CustomFallback';
+    process.env.PLAYER_NAME_0 = 'CustomHostByIndex';
     const fallbackName = getDefaultPlayerName(0, undefined, { id: 1 });
-    assert(fallbackName === 'CustomFallback', `Player 0 should fall back to DEFAULT_PLAYER_NAME, got '${fallbackName}'`);
+    assert(fallbackName === 'CustomHostByIndex', `Player 0 should fall back to PLAYER_NAME_0, got '${fallbackName}'`);
 
-    console.log('  ✓ Steam ID path extraction, multiplayer ID resolution, and name mapping fallbacks verified');
+    console.log('  ✓ Steam ID path extraction, multiplayer ID resolution, and PLAYER_NAME_<ID> schema verified');
   } finally {
     process.env.STS2_SAVE_DIR = savedSaveDir;
     process.env.PLAYER_NAME_10000000000000001 = savedName765;
     process.env.PLAYER_NAME_10000000000000002 = savedNameMP;
     process.env.DEFAULT_PLAYER_NAME = savedDefaultName;
+    delete process.env.PLAYER_NAME_0;
+    delete process.env.PLAYER_NAME_10000000000000003;
   }
 
   // Cleanup test scratch directory

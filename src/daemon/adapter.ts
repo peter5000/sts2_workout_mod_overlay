@@ -20,12 +20,10 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
     }
   }
 
+  // Single standard key schema: PLAYER_NAME_<ID>
   for (const idVal of candidateIds) {
     const strId = String(idVal).trim();
-    const envById = process.env[`PLAYER_ID_${strId}`] || 
-                    process.env[`PLAYER_NAME_${strId}`] || 
-                    process.env[`STEAM_ID_${strId}`] || 
-                    process.env[strId];
+    const envById = process.env[`PLAYER_NAME_${strId}`];
     if (envById && envById.trim().length > 0) {
       return envById.trim();
     }
@@ -36,8 +34,8 @@ export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj
     return rawName.trim();
   }
 
-  // 3. Check environment variable by player index (e.g. PLAYER_NAME_0) or DEFAULT_PLAYER_NAME for idx 0
-  const envByIndex = process.env[`PLAYER_NAME_${idx}`] || (idx === 0 ? (process.env.DEFAULT_PLAYER_NAME || process.env.LOCAL_PLAYER_NAME) : undefined);
+  // 3. Single standard key schema by index: PLAYER_NAME_<idx> (e.g. PLAYER_NAME_0)
+  const envByIndex = process.env[`PLAYER_NAME_${idx}`];
   if (envByIndex && envByIndex.trim().length > 0) {
     return envByIndex.trim();
   }
