@@ -1,313 +1,367 @@
-# 🏋️ Slay the Spire 2: Workout Mode Overlay (v1.1.0)
+# Slay the Spire 2 Workout Mode Overlay
 
-> An out-of-process, zero-mod workout debt tracker and transparent HUD overlay for **Slay the Spire 2**.
+> The all-in-one workout companion for Slay the Spire 2. Level up your real-life fitness while having fun climbing the Spire, solo or with friends!
 
 ---
 
-## 📌 Project Overview
+## Table of Contents
 
-**Slay the Spire 2 Workout Mode Helper** transforms every combat encounter into a real-life physical workout. It monitors your game save file in real-time, calculates per-player workout debt after every floor based on turns taken and health lost, and presents an interactive transparent HUD overlay for logging exercise reps (Push-ups & Squats).
+- [Overview](#overview)
+- [How It Works](#how-it-works)
+- [Quick Start by Player Type](#quick-start-by-player-type)
+  - [Software Requirements Summary](#software-requirements-summary)
+  - [Setup Guide: Solo Player](#setup-guide-solo-player)
+  - [Setup Guide: Co-op Host](#setup-guide-co-op-host)
+  - [Setup Guide: Co-op Teammate](#setup-guide-co-op-teammate)
+- [Using the Overlay In-Game](#using-the-overlay-in-game)
+- [Setting Player Names](#setting-player-names)
+- [Frequently Asked Questions](#frequently-asked-questions)
+- [Technical Details & Architecture](#technical-details--architecture)
+- [License](#license)
+
+---
+
+## Overview
+
+The Slay the Spire 2 Workout Mode Overlay is a transparent, floating head-up display (HUD) that turns your gameplay into physical exercise. Every combat encounter calculates workout debt (push-ups and squats) based on turns taken and health lost.
+
+Key advantages:
+- **Zero Modding Required:** Runs completely out-of-process alongside Slay the Spire 2. Game files remain untouched and Steam achievements are preserved.
+- **Solo and Multiplayer Ready:** Works whether you play alone or with friends in co-op. Every player gets their own customized workout ledger and squat conversion ratio.
+- **Interactive Floating HUD:** Sits transparently on top of your game window with toggleable mouse click-through so it never gets in the way of card play.
+
+---
+
+## How It Works
+
+The rules are simple, motivating, and keep you moving between floors:
+
+1. **Combat Debt:**
+   When a combat encounter ends, you accrue a workout debt based on how long the battle lasted and how much health you lost:
+   ```
+   Workout Debt = (Combat Turns * Turn Multiplier) + Health Lost
+   ```
+2. **Push-ups and Squats:**
+   - Push-ups clear debt at a 1:1 ratio (1 push-up = 1 rep).
+   - Squats clear debt using your personal Squat Ratio (default is 2 squats = 1 rep; adjustable on the fly to 3:1, 4:1, etc.).
+3. **Death Penalty Multiplier:**
+   - Base turn multiplier starts at 2.
+   - Each mid-combat death increases your turn multiplier by +1 for all subsequent floors.
+   - Dying on floor N freezes your turn count at the moment of death, and the increased multiplier begins on floor N+1.
+4. **Reward Screen Healing:**
+   - When combat finishes, you enter the reward stage. Any healing received (potions, relics, healing cards) dynamically offsets your damage taken, reducing your workout debt.
+   - If you want to do your reps right away, click **Commit Floor Now** to lock in your reps early.
+   - If you prefer to finish picking cards, your debt automatically commits when the party steps onto the next floor with all reward heals factored in.
+5. **Victory vs. Defeat:**
+   - **Victory:** Winning the entire game automatically commits and accrues your final boss fight workout debt so you celebrate the win with a victory set.
+   - **Defeat:** Wiping in combat waives the reps for that final losing fight (0 reps), preserves all previous uncompleted debt, and triggers a live **24-Hour Countdown Timer** for a mandatory 30-minute accountability jog.
+
+---
+
+## Quick Start by Player Type
+
+Choose the guide that matches your role. Each guide is fully self-contained.
+
+### Software Requirements Summary
+
+| Program | Needed by Solo Player | Needed by Co-op Host | Needed by Co-op Teammate | Download Link |
+|---|:---:|:---:|:---:|---|
+| **Git** | Required | Required | Required | [Download Git](https://git-scm.com/) |
+| **Node.js (v18+ LTS)** | Required | Required | Required | [Download Node.js](https://nodejs.org/) |
+| **ngrok** | Not needed | Required | Not needed | [Sign up at ngrok](https://dashboard.ngrok.com/signup) |
+| **Slay the Spire 2** | Required | Required | Required | Steam |
+
+---
 
 <details>
-<summary><b>🎯 Key Features (Click to expand)</b></summary>
+<summary><b>Setup Guide: Solo Player (Click to expand)</b></summary>
 
-### Features & Mechanics
-* **Zero Modding Required:** Operates entirely out-of-process as a host daemon reading local save checkpoints—keeping game files intact and preserving Steam achievements.
-* **Per-Player Attribution Engine:** Calculates individual workout counters ($wc_p$) per player rather than pooling party debt.
-* **Per-Player Manual Commit & Reward-Exit Fallback:** During the reward stage, players can click "Commit Floor Now" in Panel A to lock in debt early and do reps during rewards (forfeiting subsequent reward heals). If uncommitted, debt auto-commits with full reward healing credit when the party steps onto the next floor.
-* **Dynamic Squat Ratio ($R$):** Instantly adjust rep conversions during gameplay (default: $R = 2$, where $2\ \text{Squats} = 1\ wc$ and $1\ \text{Push-up} = 1\ wc$).
-* **Transparent Click-Through Overlay:** Built with Electron & React—floats directly over Slay the Spire 2 with toggleable mouse click-through support.
-* **Accountability Defeat Penalty:** Runs ending in defeat trigger a live **24-Hour Countdown Timer** for a mandatory 30-minute jog penalty.
-* **Offline Testing & Simulation Suite:** Built-in sample save fixtures and CLI simulator script (`npm run simulate`) for end-to-end testing without running the game.
+### Solo Player Setup
+
+If you are playing Slay the Spire 2 by yourself on your own PC, you only need to run the local tracker and the overlay HUD.
+
+#### 1. Install Prerequisites
+- Download and install [Git](https://git-scm.com/).
+- Download and install [Node.js LTS](https://nodejs.org/) (version 18 or higher).
+- Confirm installation by opening a terminal (Command Prompt or PowerShell) and typing:
+  ```bash
+  git --version
+  node -v
+  npm -v
+  ```
+
+#### 2. Download and Build the Project
+Open your terminal and run:
+```bash
+# 1. Clone the repository
+git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
+
+# 2. Enter the project directory
+cd sts2_workout_mod_overlay
+
+# 3. Install dependencies and build the application
+npm install
+npm run build
+
+# 4. Create your local environment configuration file
+copy .env.example .env
+```
+*(If you are on macOS or Linux, use `cp .env.example .env` instead of `copy`).*
+
+#### 3. Launching Your Session
+You will need two terminal windows open:
+
+**Terminal 1 — Start the Game Save Tracker:**
+```bash
+cd sts2_workout_mod_overlay
+npm run start:daemon
+```
+
+**Terminal 2 — Start the Workout HUD Overlay:**
+```bash
+cd sts2_workout_mod_overlay
+npm run start:overlay
+```
+
+Start Slay the Spire 2. The overlay will connect automatically to `127.0.0.1:8765` and begin tracking your run immediately!
 
 </details>
 
 ---
 
-## 🚀 Getting Started
+<details>
+<summary><b>Setup Guide: Co-op Host (Click to expand)</b></summary>
 
-Choose your role to jump directly to your self-contained setup guide:
-* 👑 **If you are the Host** (hosting the game lobby / owning the save file): **[Start here](#host-setup)**
-* 🎮 **If you are Joining** (co-op party member connecting remotely): **[Start here](#joiner-setup)**
+### Co-op Host Setup
 
----
+The host PC runs Slay the Spire 2, monitors save files, and runs a public relay so teammates can connect their overlays.
 
-<a id="host-setup"></a>
-### 👑 Host Setup Guide
+#### 1. Install Prerequisites
+- Download and install [Git](https://git-scm.com/).
+- Download and install [Node.js LTS](https://nodejs.org/) (version 18 or higher).
+- Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup) to get a free authentication token.
 
-The host's PC runs Slay the Spire 2, monitors save checkpoints, and hosts the workout relay daemon.
-
-#### 1. Prerequisites & Dependencies (Host)
-Before getting started, make sure you have the following installed on your PC:
-* **Git**: [Download Git](https://git-scm.com/) (required to clone and update the project)
-* **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
-  * Verify installation in your terminal:
-    ```bash
-    node -v
-    npm -v
-    ```
-* **ngrok**: Sign up for a free account at [ngrok.com](https://dashboard.ngrok.com/signup) to get a free authtoken (needed to tunnel your local daemon securely to your teammates).
-
-#### 2. Installation & Setup
+#### 2. Download and Build the Project
+Open your terminal and run:
 ```bash
 # 1. Clone the repository
 git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
+
+# 2. Enter the project directory
 cd sts2_workout_mod_overlay
 
-# 2. Install dependencies & build
+# 3. Install dependencies and build the application
 npm install
 npm run build
 
-# 3. Configure environment
-cp .env.example .env
+# 4. Create your local environment configuration file
+copy .env.example .env
 ```
-*(Optional: Edit `STS2_SAVE_DIR` in `.env` if your StS2 saves are in a custom directory).*
 
-#### 3. One-Time ngrok Setup
-Copy your authtoken from [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) and register it locally:
+#### 3. One-Time ngrok Configuration
+Get your authtoken from [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) and link it in your terminal:
 ```bash
 npx ngrok config add-authtoken YOUR_AUTHTOKEN_HERE
 ```
 
-#### 4. Launching Session (3 Terminals)
-* **Terminal 1 — Start the Save Daemon:**
-  ```bash
-  npm run start:daemon
-  ```
-* **Terminal 2 — Open Public Tunnel:**
-  ```bash
-  npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
-  ```
-  *Copy the `https://<something>.ngrok-free.app` forwarding URL printed by ngrok and share it with your co-op teammates.*
-* **Terminal 3 — Launch Your HUD Overlay:**
-  ```bash
-  npm run start:overlay
-  ```
+#### 4. Launching the Host Session
+Open three separate terminal windows:
+
+**Terminal 1 — Run the Save Daemon:**
+```bash
+cd sts2_workout_mod_overlay
+npm run start:daemon
+```
+
+**Terminal 2 — Open the Public Tunnel:**
+```bash
+cd sts2_workout_mod_overlay
+npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"
+```
+Look for the `Forwarding` line printed by ngrok (e.g. `https://random-id.ngrok-free.app`). **Copy this URL and send it to your teammates.**
+
+**Terminal 3 — Run Your Local Overlay:**
+```bash
+cd sts2_workout_mod_overlay
+npm run start:overlay
+```
+
+</details>
 
 ---
 
-<a id="joiner-setup"></a>
-### 🎮 Joiner Setup Guide
+<details>
+<summary><b>Setup Guide: Co-op Teammate (Click to expand)</b></summary>
 
-Joiners do **not** need StS2 save file access, daemon background processes, or ngrok accounts. You only run the transparent overlay HUD and connect to the host.
+### Co-op Teammate Setup
 
-#### 1. Prerequisites & Dependencies (Joiner)
-Before getting started, make sure you have the following installed on your PC:
-* **Git**: [Download Git](https://git-scm.com/) (required to clone and update the project)
-* **Node.js & npm**: [Download Node.js](https://nodejs.org/) (v18.0.0 or higher; LTS recommended)
-  * Verify installation in your terminal:
-    ```bash
-    node -v
-    npm -v
-    ```
+Teammates joining a multiplayer lobby do **not** need access to the game save files, do **not** need ngrok accounts, and do **not** run the background daemon. You only run the HUD overlay on your own PC and point it to the host.
 
-#### 2. Installation & Setup
+#### 1. Install Prerequisites
+- Download and install [Git](https://git-scm.com/).
+- Download and install [Node.js LTS](https://nodejs.org/) (version 18 or higher).
+
+#### 2. Download and Build the Project
+Open your terminal and run:
 ```bash
 # 1. Clone the repository
 git clone https://github.com/peter5000/sts2_workout_mod_overlay.git
+
+# 2. Enter the project directory
 cd sts2_workout_mod_overlay
 
-# 2. Install dependencies & build
+# 3. Install dependencies and build the application
 npm install
 npm run build
 ```
 
-#### 3. Launch & Connect
-1. **Launch Your Overlay:**
-   ```bash
-   npm run start:overlay
-   ```
-2. **Connect to Host:**
-   * In the top header bar of the overlay, click the **Host IP / Connection** badge (e.g. `🌐 127.0.0.1:8765`).
-   * Enter the Host's ngrok forwarding URL (e.g. `https://example-1234.ngrok-free.app`).
-   * Click **Save & Reconnect**. The indicator turns green (`🌐 Connected`) and will automatically sync live run metrics and workout debt!
-
----
-
-### 👥 Who Runs What Summary
-
-| Role | Runs daemon (`npm run start:daemon`) | Runs ngrok tunnel | Runs overlay (`npm run start:overlay`) |
-|------|:------------------------------------:|:-----------------:|:-------------------------------------:|
-| **👑 Host** (owns lobby / save file) | ✅ | ✅ | ✅ |
-| **🎮 Joiner** (party member) | ❌ | ❌ | ✅ |
-
----
-
-### 🔗 Connecting Both Overlays in Co-op (Step-by-Step)
-
-When playing multiplayer Slay the Spire 2 with friends:
-
-1. **Host does:**
-   * Starts daemon: `npm run start:daemon`
-   * Starts public tunnel: `npx ngrok http 8765 --response-header-add "ngrok-skip-browser-warning: true"`
-   * Starts host overlay: `npm run start:overlay` (connects automatically to local daemon `127.0.0.1:8765`)
-   * Shares the ngrok URL (e.g. `https://example-1234.ngrok-free.app`) with co-op party members.
-
-2. **Each Teammate (Joiner) does:**
-   * Opens their overlay on their PC: `npm run start:overlay`
-   * Clicks the connection badge in the top header (shows `⚠️ Offline` or `🌐 127.0.0.1:8765`).
-   * Pastes the Host's ngrok forwarding URL (e.g. `https://example-1234.ngrok-free.app`).
-   * Clicks **Save & Reconnect**. The badge turns green (`🌐 Connected`).
-
-3. **Both Overlays Are Live!**
-   * Each player selects their name from the **Active Player** dropdown on Panel A/B.
-   * As soon as combat ends, both players' HUDs update in real-time with individual workout debt.
-   * Each player logs and clears their own push-ups and squats independently!
-
-#### 💡 Friendly Name Mapping by Steam ID (Optional)
-By default, the overlay identifies players by their Steam ID (e.g. `Player 2 (9280)`).
-To display friendly names like **PlayerOne** and **PlayerThree**, add each player's 64-bit Steam ID to `.env` on the Host PC:
-```env
-PLAYER_NAME_10000000000000001=PlayerOne
-PLAYER_NAME_10000000000000003=PlayerThree
+#### 3. Launch the Overlay and Connect to Host
+In your terminal, launch the overlay:
+```bash
+cd sts2_workout_mod_overlay
+npm run start:overlay
 ```
 
----
+1. Look at the top header bar of your overlay window. Click the connection badge (it will display `127.0.0.1:8765` or `Offline`).
+2. Paste the host's ngrok forwarding URL (e.g. `https://random-id.ngrok-free.app`).
+3. Click **Save & Reconnect**.
+4. The connection indicator will turn green (`Connected`). Your HUD will now synchronize with your game lobby in real time!
 
-## 🛠️ Troubleshooting
-
-1. Update and rebuild first:
-   ```bash
-   git pull
-   npm install
-   npm run build
-   ```
-2. Restart everything (host: daemon → ngrok → overlay; joiner: overlay). Re-share the ngrok URL if it changed.
-3. Still broken? Open a GitHub issue with: your role (host/joiner), OS, the daemon console output,
-   and what you expected vs. what happened. Redact Steam IDs and ngrok URLs.
-
----
-
-## ❓ Frequently Asked Questions & Edge Cases (Q&A)
-
-<details open>
-<summary><b>💀 When does a death penalty start affecting my workout counter multiplier?</b></summary>
-
-**A:** The death penalty multiplier takes effect starting from the **subsequent floor** (the floor after you died).
-* In the formula $wc_p = n_p(2 + d_p) + h_p$, the multiplier $(2 + d_p)$ on the floor where you die uses your cumulative deaths **entering** that floor.
-* Your turn count ($n_p$) freezes at the exact round of death so you are not penalized for additional turns your surviving allies take.
-* At the conclusion of that floor, your death count increments ($d_p \leftarrow d_p + 1$). All subsequent combat floors will multiply your turns by $(2 + d_{\text{new}})$.
-</details>
-
-<details>
-<summary><b>❤️ In co-op, if I die mid-combat but my allies win and I revive with 1 HP, does it count as a death?</b></summary>
-
-**A:** **Yes.** Even though Slay the Spire 2 revives fallen teammates with 1 HP after a victory, the daemon enriches save checkpoints with `godot.log` to catch the mid-combat death event (`Player X died, doing death handling`).
-* Your combat turns ($n_p$) freeze at your round of death.
-* Your cumulative death count ($d_p$) increments by $+1$ for all future floors.
-</details>
-
-<details>
-<summary><b>🛡️ What happens if the entire party wipes (Game Defeat)?</b></summary>
-
-**A:** On full game defeat, workout counters for the final losing battle are **waived** ($wc = 0$).
-* You are **not** double-penalized with push-up/squat debt for the battle that ended the run.
-* Prior uncompleted floors' debt is preserved.
-* The mandatory **30-minute defeat jog penalty** triggers with an active 24-hour countdown timer on the overlay.
-</details>
-
-<details>
-<summary><b>🩹 If I heal from potions or relics on the reward screen, does my debt decrease?</b></summary>
-
-**A:** **Yes, as long as you have not manually committed the floor yet.**
-During the reward screen of combat encounters, a **"Commit Floor Now"** button appears in Panel A:
-* **If you wait:** Any healing received during rewards (drinking a potion, picking a healing card/relic, etc.) dynamically offsets your HP damage taken ($h_p$). Once all players finish rewards and advance to Floor $n+1$, your debt auto-commits with that healing factored in, and the commit button disappears.
-* **If you commit early:** Clicking "Commit Floor Now" locks in your workout debt immediately so you can start clearing reps during the reward screen. Once committed, you forfeit subsequent reward healing reductions for that floor.
-</details>
-
-<details>
-<summary><b>🚀 What happens if we launch the overlay in the middle of an active run?</b></summary>
-
-**A:** The daemon sequentially replays past floors from `map_point_history` to catch up your active debt. Because earlier mid-combat deaths from prior encounters may have already scrolled past `godot.log`, you can adjust your death counter directly in the Panel B HUD if needed.
 </details>
 
 ---
 
+## Using the Overlay In-Game
+
+The overlay is split into two panels with dedicated controls:
+
+### Panel A: Workout Deck
+- **Pending Floor Banner:** Appears after combat finishes while in the reward screen. Shows your exact turns, damage taken, and workout debt formula. Click **Commit Floor Now** if you want to lock in your debt early and start exercising during card rewards.
+- **Exercise Rep Buttons:**
+  - **Push-ups (+1, +5, +10, Clear All):** Clears debt at 1:1.
+  - **Squats (+2, +6, +10, Custom):** Clears debt according to your active squat ratio.
+  - **Custom Entry:** Enter any arbitrary number of reps to subtract from your debt.
+- **Unresolved Debt Counter:** Displays your remaining workout debt in bold. Turns green when you reach 0.
+
+### Panel B: Ledger & Controls
+- **Player Selector:** In multiplayer, switch between teammates to view everyone's progress and stats.
+- **Squat Ratio Controller:** Slider allowing each player to set their own difficulty (e.g. 2:1, 3:1, or 4:1).
+- **Death Counter Stepper:** View and adjust cumulative deaths if you started the tracker mid-run.
+- **Session Totals:** Displays lifetime completed push-ups, squats, and total workout counters accrued.
+
+### Mouse Click-Through Mode
+- Click the lock/mouse toggle button in the top-right header to enable **Click-Through Mode**.
+- While enabled, mouse clicks pass directly through the transparent overlay into Slay the Spire 2 so you can play without obstruction.
+- Click the button or use your configured shortcut to regain mouse focus when you are ready to log exercises.
+
+---
+
+## Setting Player Names
+
+By default, players in co-op are displayed using their Steam IDs (e.g. `Player 1 (8509)`). You can easily assign friendly display names (e.g. **PlayerOne**, **PlayerTwo**, **PlayerThree**).
+
+Open the `.env` file on the Host PC and add your players' 64-bit Steam IDs:
+
+```env
+# Format: PLAYER_NAME_<SteamID>=DisplayName
+PLAYER_NAME_10000000000000001=PlayerOne
+PLAYER_NAME_10000000000000002=PlayerTwo
+PLAYER_NAME_10000000000000003=PlayerThree
+
+# Fallback by player index if playing offline/single player:
+PLAYER_NAME_0=PlayerOne
+```
+
+### Live Hot-Reload
+You do **not** need to restart the daemon or the overlay when editing player names. As soon as you save `.env` on disk, the daemon detects the file update, reloads names, and pushes the change live to all connected overlays immediately!
+
+---
+
 <details>
-<summary><b>🔬 Technical Details: Mathematical Model & Architecture (Click to expand)</b></summary>
+<summary><b>Frequently Asked Questions (Click to expand)</b></summary>
 
-## 🧮 Mathematical Model & Exercise Debt Equation
+### Can I get banned or lose Steam achievements?
+No. The tracker runs 100% out-of-process. It does not inject code into Slay the Spire 2, does not alter game memory, and does not modify save files. It only reads save checkpoints created naturally by the game.
 
-At the conclusion of each floor $f$, each player $p$ accrues a workout counter value ($wc_p$):
+### What happens if I forget to click "Commit Floor Now"?
+Nothing is lost! The commit button is optional for players who want to exercise during the reward screen. If you finish picking your cards and move to the next floor, your debt auto-commits automatically with all reward healing factored in.
+
+### What happens if our run ends in Defeat?
+On defeat, the reps for the final losing combat are waived (0 reps). Any debt you accumulated on earlier floors is kept, and the overlay starts a live **24-hour countdown timer** reminding your party to complete a 30-minute accountability jog.
+
+### Can different players use different squat ratios in co-op?
+Yes. Each player has their own independent squat ratio setting in Panel B. One player can do 2 squats per rep while another does 3 or 4 squats per rep.
+
+### What if we launch the overlay in the middle of a run?
+The daemon replays past floors from your run history to calculate your current debt. If earlier mid-combat deaths already scrolled past the combat log, you can use the death stepper in Panel B to adjust your death counter to the correct value.
+
+</details>
+
+---
+
+<details>
+<summary><b>Technical Details & Architecture (Click to expand)</b></summary>
+
+### Exercise Debt Equation
+
+At the end of each floor $f$, each player $p$ accrues a workout counter value ($wc_p$):
 
 $$wc_p = n_p(2 + d_p) + h_p$$
 
 Where:
-* $n_p$: Combat turns taken by player $p$ (freezes at death turn if fallen mid-combat; $0$ for events/campfires/shops).
-* $d_p$: Cumulative deaths suffered by player $p$ across the current run up to that point.
-* $h_p$: Net positive HP lost on that floor ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$).
-* **Defeat Combat Waiver:** On full game defeat, workout counters for the final losing battle are waived ($wc_p = 0$). Prior floors' debt is preserved and the 30-minute jog penalty applies.
+- $n_p$: Combat turns taken (freezes at round of death if knocked down mid-combat; 0 for non-combat rooms).
+- $d_p$: Cumulative deaths suffered across the current run prior to this encounter.
+- $h_p$: Net HP lost on that floor ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$).
 
-### Rep Conversions & Unresolved Debt
-$$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups Completed}_p + \left\lfloor \frac{\text{Squats Completed}_p}{R} \right\rfloor \right)$$
+Remaining workout debt is calculated as:
+$$\text{Remaining Debt}_p = \sum wc_{p, \text{accrued}} - \left( \text{Push-ups}_p + \left\lfloor \frac{\text{Squats}_p}{R_p} \right\rfloor \right)$$
 
----
-
-## 🏗️ System Architecture & Data Flow
+### Architecture Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              HOST PC ENVIRONMENT                             │
-│                                                                              │
-│  ┌────────────────────────┐                                                  │
-│  │  Slay the Spire 2      │ (Godot Engine Process)                           │
-│  │  Save Output           │ Writes save checkpoints on floor exit / death    │
-│  └───────────┬────────────┘                                                  │
-│              ▼                                                               │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ WORKOUT RELAY DAEMON (Background Node.js Service)                       │  │
-│  │  • File Observer & Debouncer (75ms debounce, SHA-256 deduplication)    │  │
-│  │  • Metric Extractor (Parses turn logs, death turn freezing, HP deltas)  │  │
-│  │  • Per-Player Debt Ledger & Persistence (active_session.json)          │  │
-│  │  • Broadcast Engine (WebSocket & REST API @ ws://127.0.0.1:8765)        │  │
-│  └───────────┬────────────────────────────────────────────────────────────┘  │
-│              ▼                                                               │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ WORKOUT OVERLAY HUD (Electron + React Transparent Overlay Window)       │  │
-│  │  • Panel A: Remainder Resolver (Freeform & Bulk Rep Clearance)         │  │
-│  │  • Panel B: Aggregate Ledger & Live Squat Ratio Controller             │  │
-│  │  • Lifecycle Modals: Run Opt-in & 24h Defeat Jog Penalty Countdown     │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------------------+
+|                             HOST PC ENVIRONMENT                              |
+|                                                                              |
+|  +------------------------+                                                  |
+|  |  Slay the Spire 2      | (Godot Engine Process)                           |
+|  |  Save Checkpoint       | Writes current_run.save on floor exit / death    |
+|  +-----------+------------+                                                  |
+|              |                                                               |
+|              v                                                               |
+|  +------------------------------------------------------------------------+  |
+|  | WORKOUT RELAY DAEMON (Node.js Background Service)                      |  |
+|  |  - File Observer (Debounced reading, SHA-256 deduplication)            |  |
+|  |  - Metric Parser (Turns, mid-combat death detection via godot.log)     |  |
+|  |  - Debt Ledger & Persistence (active_session.json, workout_history)   |  |
+|  |  - WebSocket & REST API Service (Port 8765)                            |  |
+|  +-----------+------------------------------------------------------------+  |
+|              |                                                               |
+|              v                                                               |
+|  +------------------------------------------------------------------------+  |
+|  | WORKOUT OVERLAY HUD (Electron + React)                                 |  |
+|  |  - Panel A: Rep Clearer & Live Commit Banner                           |  |
+|  |  - Panel B: Session Aggregates & Squat Ratio Controls                  |  |
+|  +------------------------------------------------------------------------+  |
++------------------------------------------------------------------------------+
 ```
 
----
-
-</details>
-
----
-
-## 💻 Development & Testing
-
-### Launching the Daemon & Overlay
+### Offline Save Simulator (Testing Without Game)
+You can test the entire pipeline without running Slay the Spire 2:
 ```bash
-# Start background daemon server
-npm run start:daemon
-
-# Start Electron HUD overlay window
-npm run start:overlay
-```
-
-### Running the Offline Save Simulator
-Test the full pipeline without running Slay the Spire 2:
-```bash
-# Simulate floor 1 fight
+# Simulate floor 1 combat
 npm run simulate -- --step 1
 
-# Simulate boss fight with mid-combat player death
+# Simulate floor 3 elite with mid-combat death
 npm run simulate -- --step 3
 
 # Simulate run defeat (triggers 24h jog countdown)
 npm run simulate -- --step 5
 ```
 
----
-
-## 🔒 Security & Privacy Notice
-* All data remains strictly local to your Host PC (`127.0.0.1`).
-* Sensitive API keys, custom save directory overrides, and local environment parameters must be placed inside `.env` (which is excluded from version control via `.gitignore`). Never commit secret tokens or credentials to git.
+</details>
 
 ---
 
-## 📜 License
+## License
+
 This project is licensed under the [MIT License](LICENSE).
