@@ -219,7 +219,7 @@ export class SaveWatcher {
 
     try {
       // Pre-sanitize 64-bit integer IDs (15+ digits) into strings to prevent JavaScript IEEE 754 precision loss
-      // (e.g. Steam ID 10000009900000001 getting rounded to 10000000000000003)
+      // (e.g. Steam ID 17-digit integers getting rounded if parsed directly as numbers)
       const sanitized = content.replace(/"(player_id|net_id|steam_id|account_id|id)":\s*(\d{15,})/g, '"$1": "$2"');
       const raw = JSON.parse(sanitized);
       if (raw && (typeof raw.start_time === 'number' || typeof raw.start_time === 'string')) {

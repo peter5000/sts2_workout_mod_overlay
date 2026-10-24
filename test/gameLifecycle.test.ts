@@ -31,8 +31,8 @@ export function runGameLifecycleTests() {
     is_multiplayer: true,
     player_count: 2,
     players: [
-      { index: 0, name: 'PlayerOne', character: 'DEFECT' },
-      { index: 1, name: 'PlayerTwo', character: 'REGENT' }
+      { index: 0, name: 'HostPlayer', character: 'DEFECT' },
+      { index: 1, name: 'AllyPlayer', character: 'REGENT' }
     ],
     run_status: 'ACTIVE',
     floors: [],
@@ -51,8 +51,8 @@ export function runGameLifecycleTests() {
   assert(state.player_debts[0] === 0 && state.player_debts[1] === 0, 'All player debts must initialize to 0');
   assert(state.player_deaths[0] === 0 && state.player_deaths[1] === 0, 'All player deaths must initialize to 0');
   assert(state.player_aggregates[0].accrued === 0 && state.player_aggregates[1].accrued === 0, 'Aggregates must be 0');
-  assert(state.player_names?.[0] === 'PlayerOne', 'Player 0 name should be PlayerOne');
-  assert(state.player_names?.[1] === 'PlayerTwo', 'Player 1 name should be PlayerTwo');
+  assert(state.player_names?.[0] === 'HostPlayer', 'Player 0 name should be HostPlayer');
+  assert(state.player_names?.[1] === 'AllyPlayer', 'Player 1 name should be AllyPlayer');
   assert(state.run_status === 'ACTIVE', 'Run status must initialize to ACTIVE');
   assert(state.jog_penalty.active === false, 'Jog penalty must be inactive at start');
   console.log('  ✓ Game start fresh run initialization verified');
@@ -63,8 +63,8 @@ export function runGameLifecycleTests() {
     room_type: 'event',
     total_combat_turns: 0,
     player_metrics: [
-      { player_index: 0, player_name: 'PlayerOne', hp_start: 75, hp_end: 75, died_this_floor: false, death_turn: null },
-      { player_index: 1, player_name: 'PlayerTwo', hp_start: 70, hp_end: 70, died_this_floor: false, death_turn: null }
+      { player_index: 0, player_name: 'HostPlayer', hp_start: 75, hp_end: 75, died_this_floor: false, death_turn: null },
+      { player_index: 1, player_name: 'AllyPlayer', hp_start: 70, hp_end: 70, died_this_floor: false, death_turn: null }
     ]
   };
 
@@ -88,8 +88,8 @@ export function runGameLifecycleTests() {
     room_type: 'monster',
     total_combat_turns: 4,
     player_metrics: [
-      { player_index: 0, player_name: 'PlayerOne', hp_start: 75, hp_end: 65, died_this_floor: false, death_turn: null },
-      { player_index: 1, player_name: 'PlayerTwo', hp_start: 70, hp_end: 60, died_this_floor: false, death_turn: null }
+      { player_index: 0, player_name: 'HostPlayer', hp_start: 75, hp_end: 65, died_this_floor: false, death_turn: null },
+      { player_index: 1, player_name: 'AllyPlayer', hp_start: 70, hp_end: 60, died_this_floor: false, death_turn: null }
     ]
   };
 
@@ -100,14 +100,14 @@ export function runGameLifecycleTests() {
     in_reward_stage: false
   });
 
-  assert(ledger.getFullState().player_debts[0] === 18, 'Run Alpha PlayerOne debt should be 18 wc');
+  assert(ledger.getFullState().player_debts[0] === 18, 'Run Alpha HostPlayer debt should be 18 wc');
 
   // Player starts a brand new Run Beta (e.g. restarts or new lobby)
   const runBetaSave: RawRunSaveData = {
     run_id: 'lifecycle_run_beta',
     is_multiplayer: false,
     player_count: 1,
-    players: [{ index: 0, name: 'PlayerOne', character: 'IRONCLAD' }],
+    players: [{ index: 0, name: 'HostPlayer', character: 'IRONCLAD' }],
     run_status: 'ACTIVE',
     floors: [],
     current_floor: 0,
@@ -142,7 +142,7 @@ export function runGameLifecycleTests() {
     run_id: 'lifecycle_defeat_run',
     is_multiplayer: false,
     player_count: 1,
-    players: [{ index: 0, name: 'PlayerOne', character: 'DEFECT' }],
+    players: [{ index: 0, name: 'HostPlayer', character: 'DEFECT' }],
     run_status: 'ACTIVE',
     floors: [floor1Neow, floor2Combat], // 18 wc accrued on floor 2
     current_floor: 2,
@@ -158,7 +158,7 @@ export function runGameLifecycleTests() {
     room_type: 'elite',
     total_combat_turns: 5,
     player_metrics: [
-      { player_index: 0, player_name: 'PlayerOne', hp_start: 65, hp_end: 0, died_this_floor: true, death_turn: 5 }
+      { player_index: 0, player_name: 'HostPlayer', hp_start: 65, hp_end: 0, died_this_floor: true, death_turn: 5 }
     ]
   };
 
@@ -166,7 +166,7 @@ export function runGameLifecycleTests() {
     run_id: 'lifecycle_defeat_run',
     is_multiplayer: false,
     player_count: 1,
-    players: [{ index: 0, name: 'PlayerOne', character: 'DEFECT' }],
+    players: [{ index: 0, name: 'HostPlayer', character: 'DEFECT' }],
     run_status: 'DEFEAT',
     floors: [floor1Neow, floor2Combat, floor3Wipe],
     current_floor: 3,
@@ -190,7 +190,7 @@ export function runGameLifecycleTests() {
   const abandonedRaw = {
     run_id: 'lifecycle_abandon_run',
     was_abandoned: true,
-    players: [{ id: 1, name: 'PlayerOne' }],
+    players: [{ id: 1, name: 'HostPlayer' }],
     map_point_history: []
   };
   const normalizedAbandoned = normalizeSaveData(abandonedRaw);
@@ -207,8 +207,8 @@ export function runGameLifecycleTests() {
     room_type: 'boss',
     total_combat_turns: 6,
     player_metrics: [
-      { player_index: 0, player_name: 'PlayerOne', hp_start: 75, hp_end: 39, died_this_floor: false, death_turn: null }, // 6*2 + 36 = 48 wc
-      { player_index: 1, player_name: 'PlayerTwo', hp_start: 70, hp_end: 45, died_this_floor: false, death_turn: null } // 6*2 + 25 = 37 wc
+      { player_index: 0, player_name: 'HostPlayer', hp_start: 75, hp_end: 39, died_this_floor: false, death_turn: null }, // 6*2 + 36 = 48 wc
+      { player_index: 1, player_name: 'AllyPlayer', hp_start: 70, hp_end: 45, died_this_floor: false, death_turn: null } // 6*2 + 25 = 37 wc
     ]
   };
 
@@ -218,8 +218,8 @@ export function runGameLifecycleTests() {
     is_multiplayer: true,
     player_count: 2,
     players: [
-      { index: 0, name: 'PlayerOne', character: 'DEFECT' },
-      { index: 1, name: 'PlayerTwo', character: 'REGENT' }
+      { index: 0, name: 'HostPlayer', character: 'DEFECT' },
+      { index: 1, name: 'AllyPlayer', character: 'REGENT' }
     ],
     run_status: 'ACTIVE',
     floors: [floor49FinalBoss],
@@ -228,8 +228,8 @@ export function runGameLifecycleTests() {
   });
 
   let victState = victoryLedger.getFullState();
-  assert(victState.pending_player_floors?.[0]?.wc === 48, 'PlayerOne pending boss wc should be 48');
-  assert(victState.pending_player_floors?.[1]?.wc === 37, 'PlayerTwo pending boss wc should be 37');
+  assert(victState.pending_player_floors?.[0]?.wc === 48, 'HostPlayer pending boss wc should be 48');
+  assert(victState.pending_player_floors?.[1]?.wc === 37, 'AllyPlayer pending boss wc should be 37');
   assert(victState.player_debts[0] === 0, 'Debt not yet committed during rewards');
 
   // State B: Game transitions to VICTORY (e.g. cutscene / score screen) WITHOUT players manually committing
@@ -238,8 +238,8 @@ export function runGameLifecycleTests() {
     is_multiplayer: true,
     player_count: 2,
     players: [
-      { index: 0, name: 'PlayerOne', character: 'DEFECT' },
-      { index: 1, name: 'PlayerTwo', character: 'REGENT' }
+      { index: 0, name: 'HostPlayer', character: 'DEFECT' },
+      { index: 1, name: 'AllyPlayer', character: 'REGENT' }
     ],
     run_status: 'VICTORY',
     floors: [floor49FinalBoss],
@@ -254,10 +254,10 @@ export function runGameLifecycleTests() {
 
   victState = victoryLedger.getFullState();
   assert(victState.run_status === 'VICTORY', 'run_status must be VICTORY');
-  assert(victState.player_debts[0] === 48, `PlayerOne debt must accrue boss wc (48 wc), got ${victState.player_debts[0]}`);
-  assert(victState.player_debts[1] === 37, `PlayerTwo debt must accrue boss wc (37 wc), got ${victState.player_debts[1]}`);
-  assert(victState.player_aggregates[0].accrued === 48, 'PlayerOne aggregate accrued should be 48');
-  assert(victState.player_aggregates[1].accrued === 37, 'PlayerTwo aggregate accrued should be 37');
+  assert(victState.player_debts[0] === 48, `HostPlayer debt must accrue boss wc (48 wc), got ${victState.player_debts[0]}`);
+  assert(victState.player_debts[1] === 37, `AllyPlayer debt must accrue boss wc (37 wc), got ${victState.player_debts[1]}`);
+  assert(victState.player_aggregates[0].accrued === 48, 'HostPlayer aggregate accrued should be 48');
+  assert(victState.player_aggregates[1].accrued === 37, 'AllyPlayer aggregate accrued should be 37');
   assert(victState.jog_penalty.active === false, 'Jog penalty must NOT be active on VICTORY');
   assert(Object.keys(victState.pending_player_floors || {}).length === 0, 'pending_player_floors must be cleared');
   console.log('  ✓ Game end VICTORY pending boss auto-commit & full wc accrual verified');

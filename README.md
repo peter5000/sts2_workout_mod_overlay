@@ -236,12 +236,13 @@ npm run start:overlay
 The overlay is split into two panels with dedicated controls:
 
 ### Panel A: Workout Deck
-- **Pending Floor Banner:** Appears after combat finishes while in the reward screen. Shows your exact turns, damage taken, and workout debt formula. Click **Commit Floor Now** if you want to lock in your debt early and start exercising during card rewards.
-- **Exercise Rep Buttons:**
-  - **Push-ups (+1, +5, +10, Clear All):** Clears debt at 1:1.
-  - **Squats (+2, +6, +10, Custom):** Clears debt according to your active squat ratio.
-  - **Custom Entry:** Enter any arbitrary number of reps to subtract from your debt.
-- **Unresolved Debt Counter:** Displays your remaining workout debt in bold. Turns green when you reach 0.
+- **Pending Floor Banner:** Appears after combat finishes while in the reward screen. Shows the current floor number and pending workout counter (wc). Click **Commit Floor Now** if you want to lock in your debt early and start exercising during card rewards.
+- **Remaining Workout Count:** Displays your active workout debt in bold numbers. Turns red when debt is owed, and green when all reps are cleared at 0.
+- **Reps Stepper Input:** A number input with minus (`−`) and plus (`+`) buttons to quickly adjust reps (defaults to 10 reps, or type any custom number).
+- **Log Push-ups:** Subtracts the entered reps from your debt as push-ups (1:1 ratio).
+- **Log Squats:** Subtracts the entered reps from your debt as squats (clears debt based on your personal squat ratio).
+- **All Push-ups (<count>):** Clears your entire remaining workout debt in a single click using push-ups.
+- **All Squats (<count>):** Clears your entire remaining workout debt in a single click using squats (dynamically calculated using your squat ratio).
 
 ### Panel B: Ledger & Controls
 - **Player Selector:** In multiplayer, switch between teammates to view everyone's progress and stats.
@@ -258,7 +259,7 @@ The overlay is split into two panels with dedicated controls:
 
 ## Setting Player Names
 
-By default, players in co-op are displayed using their Steam IDs (e.g. `Player 1 (8509)`). You can easily assign friendly display names (e.g. **PlayerOne**, **PlayerTwo**, **PlayerThree**).
+By default, players in co-op are displayed using their Steam IDs (e.g. `Player 2 (9280)`). You can easily assign friendly display names (e.g. **PlayerOne**, **PlayerTwo**).
 
 Open the `.env` file on the Host PC and add your players' 64-bit Steam IDs:
 

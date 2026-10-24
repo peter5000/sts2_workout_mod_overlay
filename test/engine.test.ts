@@ -472,21 +472,21 @@ function runTests() {
 
   try {
     process.env.STS2_SAVE_DIR = 'C:/Games/SlayTheSpire2/steam/10000000000000001/profile1/saves';
-    process.env.PLAYER_NAME_10000000000000001 = 'PlayerOne';
-    process.env.PLAYER_NAME_10000000000000002 = 'PlayerTwo';
-    process.env.PLAYER_NAME_10000000000000003 = 'PlayerThree';
+    process.env.PLAYER_NAME_10000000000000001 = 'HostPlayer';
+    process.env.PLAYER_NAME_10000000000000002 = 'AllyOne';
+    process.env.PLAYER_NAME_10000000000000003 = 'AllyTwo';
 
     // A. Single player Godot save format where player object only has internal index { id: 1 }
-    // Must resolve Steam 64 ID from STS2_SAVE_DIR and map to 'PlayerOne'
+    // Must resolve Steam 64 ID from STS2_SAVE_DIR and map to 'HostPlayer'
     const singlePlayerName = getDefaultPlayerName(0, undefined, { id: 1 });
-    assert(singlePlayerName === 'PlayerOne', `Single-player player 0 must resolve to 'PlayerOne' via save dir Steam ID, got '${singlePlayerName}'`);
+    assert(singlePlayerName === 'HostPlayer', `Single-player player 0 must resolve to 'HostPlayer' via save dir Steam ID, got '${singlePlayerName}'`);
 
     // B. Multiplayer save format where player object has real 64-bit Steam ID in id
     const mpAlly1 = getDefaultPlayerName(1, undefined, { id: '10000000000000002' });
-    assert(mpAlly1 === 'PlayerTwo', `Multiplayer player must resolve to 'PlayerTwo' via player.id, got '${mpAlly1}'`);
+    assert(mpAlly1 === 'AllyOne', `Multiplayer player must resolve to 'AllyOne' via player.id, got '${mpAlly1}'`);
 
     const mpAlly2 = getDefaultPlayerName(2, undefined, { id: '10000000000000003' });
-    assert(mpAlly2 === 'PlayerThree', `Multiplayer player must resolve to 'PlayerThree' via player.id, got '${mpAlly2}'`);
+    assert(mpAlly2 === 'AllyTwo', `Multiplayer player must resolve to 'AllyTwo' via player.id, got '${mpAlly2}'`);
 
     // C. Single standard key schema fallback by index: PLAYER_NAME_0
     delete process.env.PLAYER_NAME_10000000000000001;
@@ -501,6 +501,7 @@ function runTests() {
     process.env.PLAYER_NAME_10000000000000002 = savedNameMP;
     process.env.DEFAULT_PLAYER_NAME = savedDefaultName;
     delete process.env.PLAYER_NAME_0;
+    delete process.env.PLAYER_NAME_10000000000000002;
     delete process.env.PLAYER_NAME_10000000000000003;
   }
 
