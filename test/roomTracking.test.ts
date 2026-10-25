@@ -114,5 +114,97 @@ export function runRoomTrackingTests() {
   assert(norm5.in_reward_stage === false, `Direct in_reward_stage should pass through as false, got ${norm5.in_reward_stage}`);
   console.log('  ✓ RawRunSaveData format pass-through verified');
 
+  // 6. Start of Act Floor (Neow room):
+  // Player 0 takes Precarious Shears relic (16 damage taken, 56 hp healed).
+  // Player 1 takes Wish relic (9 Max HP lost, 0 damage taken, 56 hp healed).
+  // Both penalties must accrue as wc and MUST NOT be mitigated by the 56 act-start heal!
+  const saveNeowActStart = {
+    run_id: 'test_neow_act_start',
+    current_act_index: 0,
+    map_point_history: [
+      [
+        {
+          map_point_type: 'ancient',
+          rooms: [{ room_type: 'event', turns_taken: 0 }],
+          player_stats: [
+            { player_id: '10000000000000001', current_hp: 40, max_hp: 70, damage_taken: 16, hp_healed: 56, max_hp_lost: 0 },
+            { player_id: '10000000000000002', current_hp: 56, max_hp: 61, damage_taken: 0, hp_healed: 56, max_hp_lost: 9 }
+          ]
+        },
+        {
+          map_point_type: 'monster',
+          rooms: [{ room_type: 'monster', turns_taken: 4 }],
+          player_stats: [
+            { player_id: '10000000000000001', current_hp: 36, max_hp: 70, damage_taken: 4, hp_healed: 0, max_hp_lost: 0 },
+            { player_id: '10000000000000002', current_hp: 52, max_hp: 61, damage_taken: 4, hp_healed: 0, max_hp_lost: 0 }
+          ]
+        }
+      ]
+    ],
+    visited_map_coords: [{ col: 0, row: 0 }, { col: 0, row: 1 }],
+    pre_finished_room: null,
+    players: [
+      { id: '10000000000000001', name: 'PlayerOne' },
+      { id: '10000000000000002', name: 'PlayerTwo' }
+    ],
+    character: 'SILENT'
+  };
+
+  const norm6 = normalizeSaveData(saveNeowActStart);
+  assert(norm6.floors.length === 2, `Floors should be 2, got ${norm6.floors.length}`);
+  
+  // Floor 1 (Neow room):
+  const f1p0 = norm6.floors[0].player_metrics[0];
+  const f1p1 = norm6.floors[0].player_metrics[1];
+  const p0Loss = f1p0.hp_start - f1p0.hp_end;
+  const p1Loss = f1p1.hp_start - f1p1.hp_end;
+  assert(p0Loss === 16, `Player 0 relic damage should accrue 16 wc penalty (ignoring heal), got ${p0Loss}`);
+  assert(p1Loss === 9, `Player 1 Wish relic Max HP loss should accrue 9 wc penalty (ignoring heal), got ${p1Loss}`);
+
+  // Floor 2 (Subsequent combat encounter):
+  // Verifies that next floor uses exit HP from Floor 1 as starting HP
+  const f2p0 = norm6.floors[1].player_metrics[0];
+  const f2p1 = norm6.floors[1].player_metrics[1];
+  assert(f2p0.hp_start === 40, `Player 0 floor 2 hp_start should be 40, got ${f2p0.hp_start}`);
+  assert(f2p0.hp_end === 36, `Player 0 floor 2 hp_end should be 36, got ${f2p0.hp_end}`);
+  assert(f2p1.hp_start === 56, `Player 1 floor 2 hp_start should be 56, got ${f2p1.hp_start}`);
+  assert(f2p1.hp_end === 52, `Player 1 floor 2 hp_end should be 52, got ${f2p1.hp_end}`);
+  console.log('  ✓ Neow relic damage and Wish relic Max HP loss (act heal ignored) verified');
+
+  // 7. Multi-Act transition (Act 2 start Ancient room with healing):
+  // Player enters Act 2 with 20 HP from Act 1 boss.
+  // Game heals player +50 HP to 70 HP, but player takes 10 damage from ancient choice.
+  // Must accrue 10 wc, not wiped out by the 50 HP act-start heal.
+  const saveAct2Ancient = {
+    run_id: 'test_act2_ancient_heal',
+    current_act_index: 1,
+    map_point_history: [
+      [
+        {
+          map_point_type: 'boss',
+          rooms: [{ room_type: 'boss', turns_taken: 8 }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 20, max_hp: 75, damage_taken: 30, hp_healed: 0 }]
+        }
+      ],
+      [
+        {
+          map_point_type: 'ancient',
+          rooms: [{ room_type: 'event', turns_taken: 0 }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 60, max_hp: 75, damage_taken: 10, hp_healed: 50 }]
+        }
+      ]
+    ],
+    visited_map_coords: [{ col: 0, row: 0 }],
+    pre_finished_room: null,
+    players: [{ id: '10000000000000001', name: 'PlayerOne' }],
+    character: 'IRONCLAD'
+  };
+
+  const norm7 = normalizeSaveData(saveAct2Ancient);
+  const act2AncientMetric = norm7.floors[1].player_metrics[0];
+  const act2Penalty = act2AncientMetric.hp_start - act2AncientMetric.hp_end;
+  assert(act2Penalty === 10, `Act 2 ancient room penalty should be 10 wc (ignoring 50 heal), got ${act2Penalty}`);
+  console.log('  ✓ Act 2 start Ancient room penalty isolation verified');
+
   console.log('  ✓ All Room & Floor Tracking tests passed cleanly!\n');
 }

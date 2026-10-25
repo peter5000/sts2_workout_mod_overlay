@@ -148,11 +148,15 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
     players.forEach((p) => (playerPrevHp[p.index] = null));
 
     let globalFloorNum = 0;
-    raw.map_point_history.forEach((act: any[]) => {
+    raw.map_point_history.forEach((act: any[], actIdx: number) => {
       if (!Array.isArray(act)) return;
-      act.forEach((mp: any) => {
+      act.forEach((mp: any, actNodeIdx: number) => {
         globalFloorNum++;
         const isLastFloor = globalFloorNum === totalFloorsCount;
+        const isCombatFloorType = ['monster', 'weak_monster', 'normal', 'elite', 'boss'].includes(
+          mp.map_point_type || mp.rooms?.[0]?.room_type || ''
+        );
+        const isActStartFloor = (mp.map_point_type === 'ancient' || actNodeIdx === 0) && !isCombatFloorType;
 
         const rawType = mp.map_point_type || mp.rooms?.[0]?.room_type || 'event';
         let room_type: RoomType = 'event';
@@ -200,33 +204,32 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
             ? stat.current_hp
             : (isLastFloor && rawCurrentHp > 0 ? rawCurrentHp : 0);
 
-          // Initialize HP at start of floor 1:
-          // Ignore Weary Traveler starting penalty (baseline to spawn HP, not max HP),
-          // but count any relic damage taken on the starting floor (e.g. Precarious Shears).
-          if (playerPrevHp[p.index] === null) {
-            if (statHasHp && stat.current_hp > 0) {
-              playerPrevHp[p.index] = stat.current_hp + (stat.damage_taken || 0);
-            } else if (rawCurrentHp > 0) {
-              playerPrevHp[p.index] = rawCurrentHp;
-            } else if (statMaxHp > 0) {
-              playerPrevHp[p.index] = statMaxHp;
-            } else {
-              playerPrevHp[p.index] = typeof rawPlayerObj?.max_hp === 'number' ? rawPlayerObj.max_hp : 75;
+          let hp_start: number;
+          let hp_end: number;
+
+          if (isActStartFloor) {
+            // Start of act floor (Neow / Ancient rooms):
+            // StS2 grants an act-start heal and resets act modifiers.
+            // Ignore act-start healing and strictly count explicit health penalties
+            // (e.g. Neow relic damage like Precarious Shears, or Max HP sacrifices like Wish relic).
+            const startOfActHpPenalty = Math.max(0, (stat?.damage_taken || 0) + (stat?.max_hp_lost || 0));
+            const safeEndHp = endHp > 0 ? endHp : (statMaxHp > 0 ? statMaxHp : 70);
+
+            hp_end = safeEndHp;
+            hp_start = safeEndHp + startOfActHpPenalty;
+            playerPrevHp[p.index] = safeEndHp;
+          } else {
+            // Regular floors (combat encounters, mid-act events, rest sites, shops):
+            if (playerPrevHp[p.index] === null) {
+              playerPrevHp[p.index] = endHp > 0 ? endHp : (statMaxHp > 0 ? statMaxHp : 75);
             }
+
+            hp_start = playerPrevHp[p.index] as number;
+            hp_end = endHp > 0 ? endHp : (statHasHp && stat.current_hp === 0 ? 0 : hp_start);
+
+            // Update tracking for entry into next floor
+            playerPrevHp[p.index] = hp_end;
           }
-
-          let hp_start = playerPrevHp[p.index] as number;
-          let hp_end = endHp > 0 ? endHp : (statHasHp && stat.current_hp === 0 ? 0 : hp_start);
-
-          // Absolute defense for starting floor / Neow room:
-          // Neow room has 0 combat turns. If no damage was explicitly taken from a relic/event choice,
-          // hp_loss must be exactly 0 (Weary Traveler spawn HP reduction is never damage).
-          if (globalFloorNum === 1 && (!stat || (stat.damage_taken || 0) === 0)) {
-            hp_start = hp_end;
-          }
-
-          // Update tracking for entry into next floor
-          playerPrevHp[p.index] = hp_end;
 
           // Check if player died during this floor from log reader
           const candidateIds = [

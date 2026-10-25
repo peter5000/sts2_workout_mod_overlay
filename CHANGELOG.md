@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.1] - 2026-10-25
+
+### Fixed
+* **Start-of-Act Health Penalty Ingestion**: Isolated automated act-start healing on start-of-act floors (`map_point_type === 'ancient'` or `actNodeIdx === 0 && !isCombat`). Deliberate health penalties—such as Neow relic damage (*Precarious Shears* taking 16 damage) or Ancient blessing Max HP sacrifices (*Wish relic* losing 9 Max HP)—now strictly accrue as workout debt ($wc$) instead of being improperly cancelled out by the act-start heal. Subsequent event and combat floors continue sequential HP tracking as intended.
+* **"All Squats" Button Decimal Calculation**: Fixed button label and confirmation modal in `renderer.tsx` to dynamically deduct the player's banked fractional squat remainder (`Math.max(activeDebt * ratio - activeRemainder, 0)`), ensuring decimal squats are accurately calculated down to 0 remaining debt.
+
+### Added
+* **Security & PII Exposure Policy**: Established formal repository instructions and contributor rules ([AGENTS.md](AGENTS.md) and [.agents/rules/pii_exposure.md](.agents/rules/pii_exposure.md)) prohibiting any commit or exposure of real Steam IDs and personal player names in code, comments, commit messages, or documentation.
+
+---
+
 ## [1.5.0] - 2026-10-24
 
 ### Added

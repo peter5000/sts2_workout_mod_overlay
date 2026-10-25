@@ -190,7 +190,7 @@ const App: React.FC = () => {
       }
     } else if (actionType === 'ALL_SQUATS') {
       if (activeDebt <= 0) return;
-      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${activeDebt * ratio} Squats?`)) {
+      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${allSquatsCount} Squats?`)) {
         return;
       }
     }
@@ -274,6 +274,8 @@ const App: React.FC = () => {
   const activeDeaths = session?.player_deaths?.[selectedPlayerIdx] || 0;
   const activeAggs = session?.player_aggregates?.[selectedPlayerIdx] || { accrued: 0, pushups: 0, squats: 0 };
   const ratio = session?.player_squat_ratios?.[selectedPlayerIdx] || session?.squat_ratio || 2;
+  const activeRemainder = session?.player_squat_remainders?.[selectedPlayerIdx] || 0;
+  const allSquatsCount = Math.max(activeDebt * ratio - activeRemainder, 0);
   const pendingFloor = session?.pending_player_floors?.[selectedPlayerIdx];
   const playerIndices = Object.keys(session?.player_debts || {});
 
@@ -440,7 +442,7 @@ const App: React.FC = () => {
               All Push-ups ({activeDebt})
             </button>
             <button onClick={() => handleResolveReps('ALL_SQUATS')} style={styles.btnClear}>
-              All Squats ({activeDebt * ratio})
+              All Squats ({allSquatsCount})
             </button>
           </div>
         </div>

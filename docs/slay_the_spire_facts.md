@@ -65,3 +65,17 @@ This document serves as the single source of truth for all verified Slay the Spi
 * **Full Boss Debt Accrual**: The final boss combat encounter accrues full workout counter ($wc$) unconditionally upon victory, regardless of whether players manually committed during the reward screen.
 * **No Lost Reps**: The debt ledger automatically records and commits the victory floor's metrics before firing the terminal event, ensuring all reps from the climax battle are tallied in the final session summary.
 
+### D. Start-of-Act Floors & Ancient Room HP Ingestion (Act-Start Healing vs. Health Penalties)
+* **Automatic Act-Start Heal**:
+  At the beginning of each Act (Act 1 at Neow, Act 2 & Act 3 at Ancient blessing nodes), the StS2 engine automatically applies an act-start heal (`hp_healed`, typically restoring between 28 and 60 HP) to refresh player vitality for the new act.
+* **Healing Isolation on Act-Start Floors**:
+  In standard combat and event rooms, mid-floor healing reduces net damage taken ($h_p$). However, on start-of-act floors (`map_point_type === 'ancient'` or `actNodeIdx === 0 && !isCombat`), allowing the automated act-start heal to offset health loss would improperly erase deliberate penalties taken during Neow choices or Ancient blessings.
+* **Strict Penalty Accrual Rule**:
+  For all start-of-act floors, the automated act-start heal is isolated and ignored. Workout debt ($wc$) strictly accrues for explicit health penalties incurred:
+  $$wc_{\text{start\_of\_act}} = \max(\text{damage\_taken} + \text{max\_hp\_lost}, 0)$$
+  * **Neow Relic Damage**: Choosing a relic with a starting damage penalty (e.g. *Precarious Shears* inflicting 16 damage taken) accrues exactly $16\ wc$ instead of being erased by the 56 HP act heal.
+  * **Ancient Blessing Max HP Sacrifices**: Choosing a blessing that permanently sacrifices Max HP (e.g. *Wish relic* reducing Max HP by 9) accrues exactly $9\ wc$.
+* **Sequential Continuity**:
+  Exit HP from the start-of-act floor is recorded as the baseline for Floor 1 of that act, ensuring subsequent event and combat floors continue sequential HP tracking ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$) as intended.
+
+

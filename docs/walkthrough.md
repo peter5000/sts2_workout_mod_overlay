@@ -139,6 +139,7 @@ Extracts ground-truth combat events directly from the Godot engine log:
 ### 3. The Save File Adapter ([`src/daemon/adapter.ts`](../src/daemon/adapter.ts))
 Handles the nuances of Slay the Spire 2's Godot save structure:
 - **Session Continuity (Run ID):** Keys `run_id` on `start_time` so transitions to game history never wipe player aggregates or reset Panel B.
+- **Start-of-Act Floors & Ancient Nodes:** Isolates and ignores automated act-start healing (`hp_healed`) so that deliberate health penalties (e.g. Neow relic damage like *Precarious Shears* dealing 16 damage taken, Ancient blessing Max HP sacrifices like *Wish relic* reducing 9 Max HP) strictly accrue as workout debt ($wc$). Normal sequential HP tracking resumes on subsequent floors.
 - **Weary Traveler vs. Starting Relics:** Baselines floor 0 HP to wounded spawn HP (Ascension 6+), but incorporates `stat.damage_taken` so damaging relics like Precarious Shears ($-16\ \text{HP}$) are accurately charged.
 - **Player Name Resolution:** Resolves display names via the single standard key schema `PLAYER_NAME_<ID>` (e.g. `PLAYER_NAME_<SteamID>` or `PLAYER_NAME_0`), automatically extracting the local Steam ID from `STS2_SAVE_DIR` for player 0.
 
@@ -158,7 +159,7 @@ Authoritative state manager across runs and rep reductions:
 
 ### 6. Overlay HUD ([`src/overlay/renderer.tsx`](../src/overlay/renderer.tsx))
 Built with React and embedded inside Electron:
-- **Panel A (Debt Resolver):** Displays unresolved debt, rep stepper inputs (`−` / `+`), `Log Push-ups`, `Log Squats`, bulk clearers (`All Push-ups`, `All Squats`), and the reward screen **Commit Floor Now** banner.
+- **Panel A (Debt Resolver):** Displays unresolved debt, rep stepper inputs (`−` / `+`), `Log Push-ups`, `Log Squats`, bulk clearers (`All Push-ups`, `All Squats` with dynamic remainder deduction), and the reward screen **Commit Floor Now** banner.
 - **Panel B (Run Ledger):** Displays cumulative push-ups, squats, remaining debt, and the collapsible stepper for adjusting that player's squat ratio.
 - **Click-Through Mode:** Pressing `Ctrl + Shift + X` passes mouse clicks directly through to Slay the Spire 2 during combat.
 - **Remote Host Switcher:** Clicking the top-right IP badge opens a modal to configure host IP addresses or ngrok tunnel endpoints.
@@ -212,7 +213,8 @@ npm run simulate -- --step 5    # Run defeat (triggers 24h jog countdown)
 ---
 
 ## 📌 Rules & Code Guidelines for Future Edits
-1. **Never Commit Secrets or Steam IDs:** `.env` is git-ignored. Keep all personal Steam IDs strictly in `.env`.
+1. **Zero PII Exposure (Strict Policy):** Never commit, hardcode, or reference real Steam IDs (64-bit numbers) or real player names in code, comments, commit messages, or public documentation. Personal Steam IDs and friendly names belong exclusively in the untracked `.env` file. Tests and documentation must strictly use synthetic mock IDs (`10000000000000001`) and role names (`PlayerOne`, `HostPlayer`). See [AGENTS.md](AGENTS.md) and [.agents/rules/pii_exposure.md](.agents/rules/pii_exposure.md).
 2. **Keep Ratios Independent:** Always look up ratios per player (`getPlayerRatio(playerIndex)`).
 3. **Preserve Atomic Writes:** Any new file persistence must use `PersistenceManager.atomicWrite`.
 4. **Run `npm test` and `npm run build` Before Committing:** Ensure all test suites pass cleanly.
+

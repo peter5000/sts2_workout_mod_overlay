@@ -1,4 +1,4 @@
-# Slay the Spire 2 Workout Mode Overlay (v1.5.0 Final)
+# Slay the Spire 2 Workout Mode Overlay (v1.5.1 Final)
 
 > The all-in-one workout companion for Slay the Spire 2. Level up your real-life fitness while having fun climbing the Spire, solo or with friends!
 
@@ -16,6 +16,7 @@
   - [Setup Guide: Co-op Teammate](#setup-guide-co-op-teammate)
 - [Using the Overlay In-Game](#using-the-overlay-in-game)
 - [Setting Player Names](#setting-player-names)
+- [Security, Privacy & PII Protection Policy](#security-privacy--pii-protection-policy)
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Technical Details & Architecture](#technical-details--architecture)
 - [License](#license)
@@ -243,7 +244,7 @@ The overlay is split into two panels with dedicated controls:
 - **Log Push-ups:** Subtracts the entered reps from your debt as push-ups (1:1 ratio).
 - **Log Squats:** Subtracts the entered reps from your debt as squats (clears debt based on your personal squat ratio).
 - **All Push-ups (<count>):** Clears your entire remaining workout debt in a single click using push-ups.
-- **All Squats (<count>):** Clears your entire remaining workout debt in a single click using squats (dynamically calculated using your squat ratio).
+- **All Squats (<count>):** Clears your entire remaining workout debt in a single click using squats. The count in parentheses dynamically calculates your active debt multiplied by your squat ratio minus any banked fractional squat remainder, accurately accounting for decimal squats down to 0.
 
 ### Panel B: Ledger & Controls
 - **Player Selector:** In multiplayer, switch between teammates to view everyone's progress and stats.
@@ -279,11 +280,35 @@ You do **not** need to restart the daemon or the overlay when editing player nam
 
 ---
 
+## Security, Privacy & PII Protection Policy
+
+This repository strictly enforces a **Zero PII (Personally Identifiable Information) Exposure** standard:
+
+- **No Real Steam IDs or Names in Version Control:** Never commit, hardcode, or reference real Steam IDs (64-bit community numbers) or real player names anywhere in source code, comments, commit messages, pull requests, or public documentation.
+- **Local Configuration Only:** Personal Steam IDs and custom player display names belong strictly in your local `.env` file (e.g. `PLAYER_NAME_<SteamID>=CustomName`), which is excluded from git tracking via `.gitignore`.
+- **Synthetic Test Identifiers:** All unit tests, fixtures, and documentation examples use synthetic mock IDs (such as `10000000000000001` and `10000000000000002`) and generic role names (`PlayerOne`, `PlayerTwo`, `HostPlayer`, `AllyPlayer`).
+- **Guidelines and Rules:** Detailed contributor rules and automated agent policies are documented in [AGENTS.md](AGENTS.md) and [.agents/rules/pii_exposure.md](.agents/rules/pii_exposure.md).
+
+---
+
 <details>
 <summary><b>Frequently Asked Questions (Click to expand)</b></summary>
 
 ### Can I get banned or lose Steam achievements?
 No. The tracker runs 100% out-of-process. It does not inject code into Slay the Spire 2, does not alter game memory, and does not modify save files. It only reads save checkpoints created naturally by the game.
+
+### How does workout debt calculate at the start of an Act (Neow room & Ancient choices)?
+When entering a new Act (Act 1 at Neow or later Acts at the Ancient blessing node), Slay the Spire 2 automatically applies an act-start heal (typically restoring between 28 and 60 HP). In standard rooms, healing offsets damage taken. However, for start-of-act floors, this free act-start heal is isolated and ignored so that deliberate health penalties strictly accrue as workout debt:
+- **Neow Relic Damage:** If you pick a starting relic that inflicts damage (such as *Precarious Shears* dealing 16 self-damage), you accrue 16 workout counters (wc) rather than having that damage erased by the act heal.
+- **Wish Relic Max HP Sacrifice:** If you choose an Ancient blessing that costs Max HP (such as *Wish relic* reducing Max HP by 9), that 9 Max HP sacrifice directly accrues as 9 workout debt.
+Once you finish your act-start choices and proceed onto the Spire map, normal sequential HP tracking resumes for all subsequent combat and event floors.
+
+### How does the "All Squats" button calculate the exact number of squats?
+The count in parentheses on the **All Squats (<count>)** button calculates the exact physical squats needed to reduce your remaining workout debt completely to 0:
+```
+All Squats Count = max(Remaining Debt * Squat Ratio - Banked Squat Remainder, 0)
+```
+If you previously logged an odd number of squats that did not divide evenly by your Squat Ratio (for example, logging 5 squats with a 2:1 ratio clears 2 workout debt and banks 1 remainder squat), the button automatically subtracts that fractional remainder. This guarantees you never perform extra squats or lose credit for decimal squats.
 
 ### What happens if I forget to click "Commit Floor Now"?
 Nothing is lost! The commit button is optional for players who want to exercise during the reward screen. If you finish picking your cards and move to the next floor, your debt auto-commits automatically with all reward healing factored in.

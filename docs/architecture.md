@@ -67,15 +67,17 @@ Where:
 * **Game Defeat Combat Waiver:** On full game defeat (`run_status === 'DEFEAT'`), the final losing combat floor where the party wipes has its workout counters waived ($wc_p = 0$). Players are not penalized with push-up/squat debt for the battle that ended the run; prior floors' debt is preserved and the 30-minute jog penalty applies.
 * **Game Victory Climax Battle Accrual:** On game victory (`run_status === 'VICTORY'`), the final boss battle accrues full workout debt ($wc_p$) automatically without waiver, ensuring all celebration reps are tallied in the final session summary.
 
-### 2.3 Sequential Floor HP Tracking & Floor 0 Rules
+### 2.3 Sequential Floor HP Tracking & Start-of-Act Rules
 To accurately calculate $h_p$ across floors with post-combat healing relics, the adapter chains floor entries sequentially:
-* **Floor 0 / Ancient Node (Starting Floor):**
-  * **Weary Traveler Penalty:** Ignored. The starting HP baseline ($\text{HP}_{\text{start}}$) uses the wounded spawn HP rather than full max HP, ensuring the inherent Ascension modifier does not penalize players before playing.
-  * **Starting Relic Damage:** Captured. Relic damage taken on floor 0 (e.g. Precarious Shears dealing 16 self-damage) is added to `stat.damage_taken`, correctly accruing $16\ wc$ without charging the Weary Traveler deficit.
+* **Start-of-Act Floors & Ancient Nodes (Act 1 Neow & Subsequent Act Starts):**
+  * **Automated Act-Start Heal Isolation:** Upon entering an Act, Slay the Spire 2 automatically applies an act-start heal (`stat.hp_healed`, typically 28–60 HP). On start-of-act floors (`map_point_type === 'ancient'` or `actNodeIdx === 0 && !isCombat`), this automated healing is isolated and ignored so it does not mitigate deliberate health penalties.
+  * **Starting Relic Damage:** Captured. Relic damage taken on floor 0 (e.g. *Precarious Shears* dealing 16 damage taken) strictly accrues as $16\ wc$, ignoring the concurrent act-start heal.
+  * **Max HP Sacrifice Penalties:** Captured. Ancient blessing choices that permanently sacrifice Max HP (e.g. *Wish relic* reducing Max HP by 9) directly accrue as workout debt ($9\ wc$).
+  * **Weary Traveler Baseline:** The starting HP baseline ($\text{HP}_{\text{start}}$) uses the wounded spawn HP rather than full max HP, ensuring the inherent Ascension modifier does not penalize players before playing.
 * **Subsequent Floors:** Floor entry HP ($\text{HP}_{\text{start}}$) is derived from the preceding floor's exit HP ($\text{HP}_{\text{end}}$), guaranteeing that heal events and combat damage are accurately isolated.
 * **Final Combat in Defeat:** On full game defeat, although the lethal battle registers $\text{HP}_{\text{end}} = 0$ for analytical and stage history accuracy, the workout counters ($wc_p$) for this wipe battle are waived ($0\ wc$), avoiding double-penalizing the party with both exercise counters and the 30-minute defeat jog penalty.
 
-Implementation reference: [`src/daemon/adapter.ts`](../src/daemon/adapter.ts#L145-L185).
+Implementation reference: [`src/daemon/adapter.ts`](../src/daemon/adapter.ts#L150-L225).
 
 ### 2.4 Per-Player Squat Ratio & Fractional Remainder ($R_p \ge 1$)
 Each player configures their own independent conversion ratio $R_p$:
@@ -210,8 +212,8 @@ Implementation reference: [`src/overlay/main.ts`](../src/overlay/main.ts#L30-L11
 * **Pending Floor Reward Banner & Early Commit:** During combat reward screens, displays pending workout debt, allows reward heals to dynamically reduce rep debt, and features a **Commit Floor Now** button allowing players to lock in and clear reps early before choosing their card/relic rewards.
 * **Custom Reps Input:** Stepper input box with `−` and `+` adjustment buttons alongside `Log Push-ups` and `Log Squats` action buttons.
 * **Bulk Clearance Buttons:**
-  * `All Push-ups (<reps>)`: Clears entire debt with push-ups.
-  * `All Squats (<reps>)`: Clears entire debt with squats according to ratio $R$.
+  * `All Push-ups (<reps>)`: Clears entire remaining debt with push-ups.
+  * `All Squats (<reps>)`: Clears entire remaining debt with squats. The rep count dynamically evaluates $\max(\text{Active Debt} \times R_p - \text{Remainder}_p, 0)$, accurately taking decimal squats into account so debt clears to 0 without loss or surplus.
 
 
 ### 5.2 Panel B: Aggregate Ledger (Run Totals)
@@ -331,7 +333,23 @@ Implementation reference: [`src/overlay/renderer.tsx`](../src/overlay/renderer.t
 
 ---
 
-## 7. Technical Glossary
+## 7. Security, Privacy & PII Protection Architecture
+
+To protect user confidentiality, this repository strictly enforces a **Zero PII (Personally Identifiable Information) Exposure Policy**:
+
+1. **Strict Prohibition on Public Identifiers:**
+   * Real Steam community IDs (64-bit numbers e.g. `1000000...`) and real player names must **never** be committed to version control, embedded in source code, recorded in commit messages, or placed in public documentation.
+2. **Local Environment Isolation:**
+   * All personal Steam ID bindings and customized player display names live exclusively in the local `.env` configuration file (`PLAYER_NAME_<SteamID>=DisplayName`), which is permanently excluded from git tracking via `.gitignore`.
+   * The daemon's `SaveWatcher` dynamically hot-reloads `.env` upon file change, broadcasting updated names to connected overlays without requiring code edits or server restarts.
+3. **Synthetic Identifiers in Tests & Fixtures:**
+   * All automated unit tests, fixtures, and documentation examples must use synthetic mock IDs (`10000000000000001`, `10000000000000002`) and generic player roles (`PlayerOne`, `PlayerTwo`, `HostPlayer`, `AllyPlayer`).
+4. **Governing Rules:**
+   * Contributor guidelines and automated agent policies are codified in [AGENTS.md](AGENTS.md) and [.agents/rules/pii_exposure.md](.agents/rules/pii_exposure.md).
+
+---
+
+## 8. Technical Glossary
 
 | Term | Category | Definition |
 |---|---|---|
