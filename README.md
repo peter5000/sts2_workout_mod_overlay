@@ -75,10 +75,11 @@ Choose the guide that matches your role. Each guide is fully self-contained.
 
 ---
 
-<details>
-<summary><b>Setup Guide: Solo Player (Click to expand)</b></summary>
+### Setup Guide: Solo Player
 
-### Solo Player Setup
+<details>
+<summary><b>Click to expand Solo Player setup instructions</b></summary>
+<br>
 
 If you are playing Slay the Spire 2 by yourself on your own PC, you only need to run the local tracker and the overlay HUD.
 
@@ -131,10 +132,11 @@ Start Slay the Spire 2. The overlay will connect automatically to `127.0.0.1:876
 
 ---
 
-<details>
-<summary><b>Setup Guide: Co-op Host (Click to expand)</b></summary>
+### Setup Guide: Co-op Host
 
-### Co-op Host Setup
+<details>
+<summary><b>Click to expand Co-op Host setup instructions</b></summary>
+<br>
 
 The host PC runs Slay the Spire 2, monitors save files, and runs a public relay so teammates can connect their overlays.
 
@@ -192,10 +194,11 @@ npm run start:overlay
 
 ---
 
-<details>
-<summary><b>Setup Guide: Co-op Teammate (Click to expand)</b></summary>
+### Setup Guide: Co-op Teammate
 
-### Co-op Teammate Setup
+<details>
+<summary><b>Click to expand Co-op Teammate setup instructions</b></summary>
+<br>
 
 Teammates joining a multiplayer lobby do **not** need access to the game save files, do **not** need ngrok accounts, and do **not** run the background daemon. You only run the HUD overlay on your own PC and point it to the host.
 
@@ -292,8 +295,11 @@ This repository strictly enforces a **Zero PII (Personally Identifiable Informat
 
 ---
 
+## Frequently Asked Questions
+
 <details>
-<summary><b>Frequently Asked Questions (Click to expand)</b></summary>
+<summary><b>Click to expand Q&A</b></summary>
+<br>
 
 ### Can I get banned or lose Steam achievements?
 No. The tracker runs 100% out-of-process. It does not inject code into Slay the Spire 2, does not alter game memory, and does not modify save files. It only reads save checkpoints created naturally by the game.
@@ -327,8 +333,11 @@ The daemon replays past floors from your run history to calculate your current d
 
 ---
 
+## Technical Details & Architecture
+
 <details>
-<summary><b>Technical Details & Architecture (Click to expand)</b></summary>
+<summary><b>Click to expand technical documentation, equations, and simulator</b></summary>
+<br>
 
 ### Documentation Guides
 
