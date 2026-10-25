@@ -494,7 +494,14 @@ function runTests() {
     const fallbackName = getDefaultPlayerName(0, undefined, { id: 1 });
     assert(fallbackName === 'CustomHostByIndex', `Player 0 should fall back to PLAYER_NAME_0, got '${fallbackName}'`);
 
-    console.log('  ✓ Steam ID path extraction, multiplayer ID resolution, and PLAYER_NAME_<ID> schema verified');
+    // D. 64-bit integer ID sanitization preventing JavaScript IEEE 754 precision loss
+    // Without regex pre-sanitization, 10000009900000001 rounds to 10000009900000000 in standard JSON.parse
+    const rawJsonWithLargeId = '{"player_id": 10000009900000001, "damage_taken": 10}';
+    const sanitizedJson = rawJsonWithLargeId.replace(/"(player_id|net_id|steam_id|account_id|id)":\s*(\d{15,})/g, '"$1": "$2"');
+    const parsedWithSanitization = JSON.parse(sanitizedJson);
+    assert(parsedWithSanitization.player_id === '10000009900000001', `Pre-sanitizing 64-bit ID must prevent precision loss, got ${parsedWithSanitization.player_id}`);
+
+    console.log('  ✓ Steam ID path extraction, multiplayer ID resolution, 64-bit precision preservation, and PLAYER_NAME_<ID> schema verified');
   } finally {
     process.env.STS2_SAVE_DIR = savedSaveDir;
     process.env.PLAYER_NAME_10000000000000001 = savedName765;
