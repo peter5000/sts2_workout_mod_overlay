@@ -5,6 +5,7 @@ import {
   ActiveSessionStore,
   WebSocketMessage
 } from '../shared/types';
+import { shouldShowSummaryModal } from '../shared/modalState';
 
 const getInitialDaemonHost = (): string => {
   const urlParams = new URLSearchParams(window.location.search);
@@ -52,6 +53,13 @@ const App: React.FC = () => {
   const [showStartModal, setShowStartModal] = useState<boolean>(false);
   const [startRatio, setStartRatio] = useState<number>(2);
   const [countdownText, setCountdownText] = useState<string>('24:00:00');
+  const [dismissedSummaryRunId, setDismissedSummaryRunId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('sts2_dismissed_summary_run_id');
+    } catch {
+      return null;
+    }
+  });
 
   // Dynamic Host Connection State
   const [daemonHost, setDaemonHost] = useState<string>(getInitialDaemonHost());
@@ -113,6 +121,10 @@ const App: React.FC = () => {
           const msg = JSON.parse(event.data);
           if (msg.type === 'RUN_DETECTED') {
             setShowStartModal(true);
+            setDismissedSummaryRunId(null);
+            try {
+              localStorage.removeItem('sts2_dismissed_summary_run_id');
+            } catch {}
             fetchState();
           } else if (
             msg.type === 'WORKOUT_FLOOR_COMMITTED' ||
@@ -268,6 +280,22 @@ const App: React.FC = () => {
       console.error('Failed to update deaths:', e);
     }
   };
+
+  const handleDismissSummary = () => {
+    const rId = session?.run_id || 'dismissed';
+    setDismissedSummaryRunId(rId);
+    try {
+      localStorage.setItem('sts2_dismissed_summary_run_id', rId);
+    } catch {}
+  };
+
+  const handleReopenSummary = () => {
+    setDismissedSummaryRunId(null);
+    try {
+      localStorage.removeItem('sts2_dismissed_summary_run_id');
+    } catch {}
+  };
+
 
   // Local player active stats
   const activeDebt = session?.player_debts?.[selectedPlayerIdx] || 0;
@@ -445,6 +473,22 @@ const App: React.FC = () => {
               All Squats ({allSquatsCount})
             </button>
           </div>
+
+          {session?.run_status !== 'ACTIVE' && dismissedSummaryRunId === session?.run_id && (
+            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+              <button
+                onClick={handleReopenSummary}
+                style={{
+                  ...styles.btnPrimary,
+                  background: 'rgba(74, 85, 104, 0.85)',
+                  padding: 'clamp(3px, 0.8vh, 6px)',
+                  fontSize: 'clamp(9px, 1.8vh, 11px)'
+                }}
+              >
+                📊 View {session.run_status === 'VICTORY' ? 'Victory' : 'Defeat'} Summary
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -545,7 +589,7 @@ const App: React.FC = () => {
       )}
 
       {/* MODAL 2: Run Outcome Screen (Shows All Players Stats) */}
-      {session?.run_status !== 'ACTIVE' && showPanelA && (
+      {shouldShowSummaryModal(session?.run_status, session?.run_id, dismissedSummaryRunId, targetPanel) && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             {session?.run_status === 'VICTORY' ? (
@@ -616,7 +660,7 @@ const App: React.FC = () => {
               );
             })()}
 
-            <button onClick={() => setSession({ ...session!, run_status: 'ACTIVE' })} style={styles.btnPrimary}>
+            <button onClick={handleDismissSummary} style={styles.btnPrimary}>
               Dismiss Summary
             </button>
           </div>

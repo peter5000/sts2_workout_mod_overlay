@@ -11,6 +11,7 @@ import { runAutoCommitTests } from './autoCommit.test';
 import { runDeathDetectionTests } from './deathDetection.test';
 import { runRewardStageTests } from './rewardStage.test';
 import { runGameLifecycleTests } from './gameLifecycle.test';
+import { runSummaryDismissalTests } from './summaryDismissal.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -27,6 +28,7 @@ function runTests() {
   runDeathDetectionTests();
   runRewardStageTests();
   runGameLifecycleTests();
+  runSummaryDismissalTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });

@@ -329,6 +329,9 @@ Yes. Each player has their own independent squat ratio setting in Panel B. One p
 ### What if we launch the overlay in the middle of a run?
 The daemon replays past floors from your run history to calculate your current debt. If earlier mid-combat deaths already scrolled past the combat log, you can use the death stepper in Panel B to adjust your death counter to the correct value.
 
+### Can I log reps or adjust squat ratios after a run ends without the summary popup re-opening?
+Yes. When a run ends in Victory or Defeat, the summary screen displays initially. Clicking **Dismiss Summary** closes the modal so you can log your remaining push-ups, squats, or adjust settings without interruption. Subsequent rep logging, ratio adjustments, and background state synchronizations will never re-open the dismissed summary. A **View Summary** button remains available in Panel A whenever you wish to review the party summary again.
+
 </details>
 
 ---
