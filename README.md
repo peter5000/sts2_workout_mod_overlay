@@ -284,7 +284,8 @@ You do **not** need to restart the daemon or the overlay when editing player nam
 
 This repository strictly enforces a **Zero PII (Personally Identifiable Information) Exposure** standard:
 
-- **No Real Steam IDs or Names in Version Control:** Never commit, hardcode, or reference real Steam IDs (64-bit community numbers) or real player names anywhere in source code, comments, commit messages, pull requests, or public documentation.
+- **No Real Steam IDs, Names, or Local Paths in Version Control:** Never commit, hardcode, or reference real Steam IDs (64-bit community numbers), real player names, or local personal filesystem paths anywhere in source code, comments, commit messages, pull requests, or public documentation. Markdown links must use relative repository paths rather than absolute local filesystem URLs (`file:///`).
+- **Standardized Placeholders:** When referencing local paths or environment configurations, strictly use `<YOUR_PC_NAME_HERE>` (e.g. `C:\Users\<YOUR_PC_NAME_HERE>\AppData\...`) and `<YOUR_STEAM_ID_HERE>`.
 - **Local Configuration Only:** Personal Steam IDs and custom player display names belong strictly in your local `.env` file (e.g. `PLAYER_NAME_<SteamID>=CustomName`), which is excluded from git tracking via `.gitignore`.
 - **Synthetic Test Identifiers:** All unit tests, fixtures, and documentation examples use synthetic mock IDs (such as `10000000000000001` and `10000000000000002`) and generic role names (`PlayerOne`, `PlayerTwo`, `HostPlayer`, `AllyPlayer`).
 - **Guidelines and Rules:** Detailed contributor rules and automated agent policies are documented in [AGENTS.md](AGENTS.md) and [.agents/rules/pii_exposure.md](.agents/rules/pii_exposure.md).
