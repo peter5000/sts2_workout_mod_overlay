@@ -481,6 +481,11 @@ function runTests() {
     const singlePlayerName = getDefaultPlayerName(0, undefined, { id: 1 });
     assert(singlePlayerName === 'HostPlayer', `Single-player player 0 must resolve to 'HostPlayer' via save dir Steam ID, got '${singlePlayerName}'`);
 
+    // Verify Godot internal net_id: 1 on player 0 never collides with PLAYER_NAME_1 (peer index collision immunity)
+    process.env.PLAYER_NAME_1 = 'AllyOneFallbackByIndex';
+    const noPeerCollisionName = getDefaultPlayerName(0, undefined, { id: 1, net_id: 1 });
+    assert(noPeerCollisionName === 'HostPlayer', `Player 0 with net_id: 1 must not collide with PLAYER_NAME_1, got '${noPeerCollisionName}'`);
+
     // B. Multiplayer save format where player object has real 64-bit Steam ID in id
     const mpAlly1 = getDefaultPlayerName(1, undefined, { id: '10000000000000002' });
     assert(mpAlly1 === 'AllyOne', `Multiplayer player must resolve to 'AllyOne' via player.id, got '${mpAlly1}'`);

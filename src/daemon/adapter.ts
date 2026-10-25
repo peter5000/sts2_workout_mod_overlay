@@ -2,14 +2,13 @@ import { RawRunSaveData, RawFloorEntry, PlayerInfo, RoomType, RawPlayerFloorMetr
 import { getCombatDeathInfoFromLog, CombatDeathInfo } from './logReader';
 
 export function getDefaultPlayerName(idx: number, rawName?: string, rawPlayerObj?: any): string {
-  // 1. Gather candidate IDs from raw player object (steam_id, account_id, id, net_id, player_id)
+  // 1. Gather candidate Steam/Account IDs (length >= 10) from raw player object
   const candidateIds: (string | number)[] = [
     rawPlayerObj?.steam_id,
     rawPlayerObj?.account_id,
     rawPlayerObj?.id,
-    rawPlayerObj?.net_id,
     rawPlayerObj?.player_id
-  ].filter((v) => v !== undefined && v !== null && v !== '');
+  ].filter((v) => v !== undefined && v !== null && v !== '' && String(v).length >= 10);
 
   // For the local player (idx 0), resolve local Steam ID from STS2_SAVE_DIR path if not present in player object
   if (idx === 0) {

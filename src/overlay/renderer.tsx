@@ -552,7 +552,9 @@ const App: React.FC = () => {
               <>
                 <h2 style={{ color: '#68d391', fontSize: 'clamp(16px, 3.5vh, 22px)' }}>🏆 VICTORY ACHIEVED!</h2>
                 <p style={{ margin: '6px 0', fontSize: 'clamp(10px, 2vh, 12px)', color: '#cbd5e0' }}>
-                  All floors cleared! Final party workout summary:
+                  {session?.is_multiplayer && Object.keys(session?.player_debts || {}).length > 1
+                    ? 'All floors cleared! Final party workout summary:'
+                    : 'All floors cleared! Final workout summary:'}
                 </p>
               </>
             ) : (
@@ -570,43 +572,49 @@ const App: React.FC = () => {
               </>
             )}
 
-            {/* PARTY SUMMARY TABLE FOR ALL PLAYERS */}
-            <div style={{ margin: '10px 0', textAlign: 'left', overflowX: 'auto' }}>
-              <div style={{ fontSize: 'clamp(10px, 2vh, 12px)', fontWeight: 'bold', color: '#a0aec0', marginBottom: '4px' }}>
-                PARTY SUMMARY (ALL PLAYERS)
-              </div>
-              <table style={styles.summaryTable}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Player</th>
-                    <th style={styles.th}>Debt</th>
-                    <th style={styles.th}>Push-ups</th>
-                    <th style={styles.th}>Squats</th>
-                    <th style={styles.th}>Deaths</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {session?.player_debts &&
-                    Object.keys(session.player_debts).map((pIdxStr) => {
-                      const pIdx = parseInt(pIdxStr, 10);
-                      const debt = session.player_debts[pIdx] || 0;
-                      const aggs = session.player_aggregates?.[pIdx] || { pushups: 0, squats: 0 };
-                      const deaths = session.player_deaths?.[pIdx] || 0;
-                      return (
-                        <tr key={pIdx}>
-                          <td style={styles.td}>{getPlayerName(pIdx)} {pIdx === 0 ? '(Host)' : ''}</td>
-                          <td style={{ ...styles.td, color: debt > 0 ? '#fc8181' : '#68d391', fontWeight: 'bold' }}>
-                            {debt} wc
-                          </td>
-                          <td style={styles.td}>{aggs.pushups}</td>
-                          <td style={styles.td}>{aggs.squats}</td>
-                          <td style={styles.td}>{deaths}</td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
+            {/* PARTY / RUN SUMMARY TABLE */}
+            {(() => {
+              const isSinglePlayer = !session?.is_multiplayer || Object.keys(session?.player_debts || {}).length <= 1;
+              return (
+                <div style={{ margin: '10px 0', textAlign: 'left', overflowX: 'auto' }}>
+                  <div style={{ fontSize: 'clamp(10px, 2vh, 12px)', fontWeight: 'bold', color: '#a0aec0', marginBottom: '4px' }}>
+                    {isSinglePlayer ? 'RUN SUMMARY' : 'PARTY SUMMARY (ALL PLAYERS)'}
+                  </div>
+                  <table style={styles.summaryTable}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Player</th>
+                        <th style={styles.th}>Debt</th>
+                        <th style={styles.th}>Push-ups</th>
+                        <th style={styles.th}>Squats</th>
+                        <th style={styles.th}>Deaths</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {session?.player_debts &&
+                        Object.keys(session.player_debts).map((pIdxStr) => {
+                          const pIdx = parseInt(pIdxStr, 10);
+                          const debt = session.player_debts[pIdx] || 0;
+                          const aggs = session.player_aggregates?.[pIdx] || { pushups: 0, squats: 0 };
+                          const deaths = session.player_deaths?.[pIdx] || 0;
+                          const displayName = isSinglePlayer ? 'Me' : `${getPlayerName(pIdx)} ${pIdx === 0 ? '(Host)' : ''}`.trim();
+                          return (
+                            <tr key={pIdx}>
+                              <td style={styles.td}>{displayName}</td>
+                              <td style={{ ...styles.td, color: debt > 0 ? '#fc8181' : '#68d391', fontWeight: 'bold' }}>
+                                {debt} wc
+                              </td>
+                              <td style={styles.td}>{aggs.pushups}</td>
+                              <td style={styles.td}>{aggs.squats}</td>
+                              <td style={styles.td}>{deaths}</td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
 
             <button onClick={() => setSession({ ...session!, run_status: 'ACTIVE' })} style={styles.btnPrimary}>
               Dismiss Summary
