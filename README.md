@@ -299,9 +299,9 @@ This repository strictly enforces a **Zero PII (Personally Identifiable Informat
 No. The tracker runs 100% out-of-process. It does not inject code into Slay the Spire 2, does not alter game memory, and does not modify save files. It only reads save checkpoints created naturally by the game.
 
 ### How does workout debt calculate at the start of an Act (Neow room & Ancient choices)?
-When entering a new Act (Act 1 at Neow or later Acts at the Ancient blessing node), Slay the Spire 2 automatically applies an act-start heal (typically restoring between 28 and 60 HP). In standard rooms, healing offsets damage taken. However, for start-of-act floors, this free act-start heal is isolated and ignored so that deliberate health penalties strictly accrue as workout debt:
-- **Neow Relic Damage:** If you pick a starting relic that inflicts damage (such as *Precarious Shears* dealing 16 self-damage), you accrue 16 workout counters (wc) rather than having that damage erased by the act heal.
-- **Wish Relic Max HP Sacrifice:** If you choose an Ancient blessing that costs Max HP (such as *Wish relic* reducing Max HP by 9), that 9 Max HP sacrifice directly accrues as 9 workout debt.
+When entering a new Act (Act 1 at Neow or later Acts at the Ancient blessing node), Slay the Spire 2 automatically applies an act-start heal (typically restoring between 28 and 60 HP). In standard rooms, healing offsets damage taken. However, for start-of-act floors (`map_point_type: 'ancient'`), this free act-start heal is isolated and ignored so that deliberate health penalties strictly accrue as workout debt:
+- **Neow Relic Damage:** If you pick a starting relic that inflicts damage (such as *Precarious Shears* dealing 16 self-damage), you accrue 16 workout counters (wc) based on the game's recorded damage taken, rather than having that damage erased by the act heal.
+- **Max HP Loss & Current HP Impact:** If you choose an Ancient blessing that costs Max HP, the game records any actual Current HP loss directly in `damage_taken` (if your Current HP exceeded the new Max HP, clamping downward). If your Current HP was already below the new Max HP and was unaffected, 0 workout debt accrues.
 Once you finish your act-start choices and proceed onto the Spire map, normal sequential HP tracking resumes for all subsequent combat and event floors.
 
 ### How does the "All Squats" button calculate the exact number of squats?

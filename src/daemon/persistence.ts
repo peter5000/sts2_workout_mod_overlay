@@ -225,8 +225,28 @@ export class PersistenceManager {
   }
 
   private atomicWrite(targetPath: string, dataStr: string): void {
-    const tmpPath = `${targetPath}.tmp`;
+    const tmpPath = `${targetPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
     fs.writeFileSync(tmpPath, dataStr, 'utf-8');
-    fs.renameSync(tmpPath, targetPath);
+    let attempts = 0;
+    while (attempts < 5) {
+      try {
+        fs.renameSync(tmpPath, targetPath);
+        return;
+      } catch (err: any) {
+        if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code) && attempts < 4) {
+          attempts++;
+          const start = Date.now();
+          while (Date.now() - start < 15) {}
+        } else {
+          try {
+            fs.copyFileSync(tmpPath, targetPath);
+            fs.unlinkSync(tmpPath);
+            return;
+          } catch {
+            throw err;
+          }
+        }
+      }
+    }
   }
 }

@@ -139,7 +139,7 @@ Extracts ground-truth combat events directly from the Godot engine log:
 ### 3. The Save File Adapter ([`src/daemon/adapter.ts`](../src/daemon/adapter.ts))
 Handles the nuances of Slay the Spire 2's Godot save structure:
 - **Session Continuity (Run ID):** Keys `run_id` on `start_time` so transitions to game history never wipe player aggregates or reset Panel B.
-- **Start-of-Act Floors & Ancient Nodes:** Isolates and ignores automated act-start healing (`hp_healed`) so that deliberate health penalties (e.g. Neow relic damage like *Precarious Shears* dealing 16 damage taken, Ancient blessing Max HP sacrifices like *Wish relic* reducing 9 Max HP) strictly accrue as workout debt ($wc$). Normal sequential HP tracking resumes on subsequent floors.
+- **Start-of-Act Floors & Ancient Nodes:** Isolates and ignores automated act-start healing (`hp_healed`) so that deliberate health penalties (e.g. Neow relic damage like *Precarious Shears* dealing 16 damage taken, or Ancient blessing choices that reduce Current HP) strictly accrue as workout debt ($wc$) via `damage_taken`. Normal sequential HP tracking resumes on subsequent floors.
 - **Weary Traveler vs. Starting Relics:** Baselines floor 0 HP to wounded spawn HP (Ascension 6+), but incorporates `stat.damage_taken` so damaging relics like Precarious Shears ($-16\ \text{HP}$) are accurately charged.
 - **Player Name Resolution:** Resolves display names via the single standard key schema `PLAYER_NAME_<ID>` (e.g. `PLAYER_NAME_<SteamID>` or `PLAYER_NAME_0`), automatically extracting the local Steam ID from `STS2_SAVE_DIR` for player 0.
 

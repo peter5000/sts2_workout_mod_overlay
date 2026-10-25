@@ -159,7 +159,7 @@ export function runRoomTrackingTests() {
   const p0Loss = f1p0.hp_start - f1p0.hp_end;
   const p1Loss = f1p1.hp_start - f1p1.hp_end;
   assert(p0Loss === 16, `Player 0 relic damage should accrue 16 wc penalty (ignoring heal), got ${p0Loss}`);
-  assert(p1Loss === 9, `Player 1 Wish relic Max HP loss should accrue 9 wc penalty (ignoring heal), got ${p1Loss}`);
+  assert(p1Loss === 0, `Player 1 Max HP loss without current HP reduction should accrue 0 wc penalty, got ${p1Loss}`);
 
   // Floor 2 (Subsequent combat encounter):
   // Verifies that next floor uses exit HP from Floor 1 as starting HP
@@ -169,7 +169,7 @@ export function runRoomTrackingTests() {
   assert(f2p0.hp_end === 36, `Player 0 floor 2 hp_end should be 36, got ${f2p0.hp_end}`);
   assert(f2p1.hp_start === 56, `Player 1 floor 2 hp_start should be 56, got ${f2p1.hp_start}`);
   assert(f2p1.hp_end === 52, `Player 1 floor 2 hp_end should be 52, got ${f2p1.hp_end}`);
-  console.log('  ✓ Neow relic damage and Wish relic Max HP loss (act heal ignored) verified');
+  console.log('  ✓ Neow relic damage and Max HP loss damage_taken isolation verified');
 
   // 7. Multi-Act transition (Act 2 start Ancient room with healing):
   // Player enters Act 2 with 20 HP from Act 1 boss.

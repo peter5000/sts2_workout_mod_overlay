@@ -69,12 +69,12 @@ This document serves as the single source of truth for all verified Slay the Spi
 * **Automatic Act-Start Heal**:
   At the beginning of each Act (Act 1 at Neow, Act 2 & Act 3 at Ancient blessing nodes), the StS2 engine automatically applies an act-start heal (`hp_healed`, typically restoring between 28 and 60 HP) to refresh player vitality for the new act.
 * **Healing Isolation on Act-Start Floors**:
-  In standard combat and event rooms, mid-floor healing reduces net damage taken ($h_p$). However, on start-of-act floors (`map_point_type === 'ancient'` or `actNodeIdx === 0 && !isCombat`), allowing the automated act-start heal to offset health loss would improperly erase deliberate penalties taken during Neow choices or Ancient blessings.
+  In standard combat and event rooms, mid-floor healing reduces net damage taken ($h_p$). However, on start-of-act floors (`map_point_type === 'ancient'`), allowing the automated act-start heal to offset health loss would improperly erase deliberate penalties taken during Neow choices or Ancient blessings.
 * **Strict Penalty Accrual Rule**:
-  For all start-of-act floors, the automated act-start heal is isolated and ignored. Workout debt ($wc$) strictly accrues for explicit health penalties incurred:
-  $$wc_{\text{start\_of\_act}} = \max(\text{damage\_taken} + \text{max\_hp\_lost}, 0)$$
-  * **Neow Relic Damage**: Choosing a relic with a starting damage penalty (e.g. *Precarious Shears* inflicting 16 damage taken) accrues exactly $16\ wc$ instead of being erased by the 56 HP act heal.
-  * **Ancient Blessing Max HP Sacrifices**: Choosing a blessing that permanently sacrifices Max HP (e.g. *Wish relic* reducing Max HP by 9) accrues exactly $9\ wc$.
+  For all start-of-act floors, the automated act-start heal is isolated and ignored. Workout debt ($wc$) strictly accrues for explicit health damage incurred via Godot's recorded `stat.damage_taken`:
+  $$wc_{\text{start\_of\_act}} = \max(\text{damage\_taken}, 0)$$
+  * **Neow Relic Damage**: Choosing a relic with a starting damage penalty (e.g. *Precarious Shears* inflicting 16 damage taken) accrues exactly $16\ wc$ instead of being erased by the act-start heal.
+  * **Ancient Blessing Max HP Sacrifices**: If an Ancient blessing reduces Max HP and that reduction forces Current HP downward, Godot's engine directly logs the truncated Current HP lost into `stat.damage_taken`, which accrues as $wc$. If Current HP was already below the new Max HP, 0 damage is taken and 0 workout debt accrues.
 * **Sequential Continuity**:
   Exit HP from the start-of-act floor is recorded as the baseline for Floor 1 of that act, ensuring subsequent event and combat floors continue sequential HP tracking ($\max(\text{HP}_{\text{start}} - \text{HP}_{\text{end}}, 0)$) as intended.
 

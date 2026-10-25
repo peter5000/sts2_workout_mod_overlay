@@ -156,7 +156,7 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
         const isCombatFloorType = ['monster', 'weak_monster', 'normal', 'elite', 'boss'].includes(
           mp.map_point_type || mp.rooms?.[0]?.room_type || ''
         );
-        const isActStartFloor = (mp.map_point_type === 'ancient' || actNodeIdx === 0) && !isCombatFloorType;
+        const isActStartFloor = mp.map_point_type === 'ancient';
 
         const rawType = mp.map_point_type || mp.rooms?.[0]?.room_type || 'event';
         let room_type: RoomType = 'event';
@@ -209,10 +209,11 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
 
           if (isActStartFloor) {
             // Start of act floor (Neow / Ancient rooms):
-            // StS2 grants an act-start heal and resets act modifiers.
-            // Ignore act-start healing and strictly count explicit health penalties
-            // (e.g. Neow relic damage like Precarious Shears, or Max HP sacrifices like Wish relic).
-            const startOfActHpPenalty = Math.max(0, (stat?.damage_taken || 0) + (stat?.max_hp_lost || 0));
+            // StS2 grants an automated act-start heal and resets act modifiers.
+            // Ignore act-start healing and strictly use stat.damage_taken.
+            // In StS2's engine, stat.damage_taken accurately captures both direct relic damage
+            // (e.g. Precarious Shears) and any Max HP loss that forced Current HP downward.
+            const startOfActHpPenalty = Math.max(0, stat?.damage_taken || 0);
             const safeEndHp = endHp > 0 ? endHp : (statMaxHp > 0 ? statMaxHp : 70);
 
             hp_end = safeEndHp;
