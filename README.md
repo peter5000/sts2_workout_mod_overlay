@@ -2,6 +2,13 @@
 
 > The all-in-one workout companion for Slay the Spire 2. Level up your real-life fitness while having fun climbing the Spire, solo or with friends!
 
+> [!TIP]
+> ### ⚡ Ready to Get Started Now?
+> Select your role to jump straight to your step-by-step setup guide:
+> 
+> * 🎮 **Playing Solo** (Single-player on your PC) → [**Launch Solo Player Guide**](#setup-guide-solo-player)
+> * 🌐 **Hosting a Lobby** (Running the game for co-op friends) → [**Launch Co-op Host Guide**](#setup-guide-co-op-host)
+> * 👥 **Joining a Lobby** (Connecting to a friend's hosted game) → [**Launch Teammate Guide**](#setup-guide-co-op-teammate)
 
 ---
 
