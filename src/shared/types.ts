@@ -21,6 +21,7 @@ export interface ActiveSessionStore {
   player_aggregates: Record<number, { accrued: number; pushups: number; squats: number }>;
   player_squat_remainders?: Record<number, number>;
   player_names?: Record<number, string>;
+  manual_adjustments?: ManualAdjustmentRecord[];
   run_status: 'ACTIVE' | 'VICTORY' | 'DEFEAT';
   jog_penalty: {
     active: boolean;
@@ -31,6 +32,13 @@ export interface ActiveSessionStore {
     room_type: RoomType;
   } | null;
   pending_player_floors?: Record<number, PendingPlayerFloor>;
+}
+
+export interface ManualAdjustmentRecord {
+  player_index: number;
+  stat: 'wc' | 'pushups' | 'squats';
+  net_delta: number;
+  last_updated: number;
 }
 
 export interface PendingPlayerFloor {
@@ -191,4 +199,11 @@ export interface UpdateDeathsPayload {
 export interface StartSessionPayload {
   opt_in: boolean;
   squat_ratio: number;
+}
+
+export interface ManualStatAdjustmentPayload {
+  player_index: number;
+  stat: 'wc' | 'pushups' | 'squats';
+  value?: number;
+  delta?: number;
 }

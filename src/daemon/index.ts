@@ -14,7 +14,8 @@ import {
   WebSocketMessage,
   RunDetectedEvent,
   CommitPendingPayload,
-  UpdateDeathsPayload
+  UpdateDeathsPayload,
+  ManualStatAdjustmentPayload
 } from '../shared/types';
 
 dotenv.config();
@@ -208,6 +209,33 @@ app.post('/api/v1/config/deaths', (req, res) => {
   });
 
   res.json({ success: true, player_deaths: currentState.player_deaths });
+});
+
+// 7. POST /api/v1/workout/adjust - Manually adjusts workout stats (wc, pushups, squats)
+app.post('/api/v1/workout/adjust', (req, res) => {
+  const payload = req.body as ManualStatAdjustmentPayload;
+  if (
+    typeof payload?.player_index !== 'number' ||
+    !['wc', 'pushups', 'squats'].includes(payload?.stat) ||
+    (typeof payload?.value !== 'number' && typeof payload?.delta !== 'number')
+  ) {
+    res.status(400).json({ error: 'Missing or invalid parameters: player_index, stat, value/delta' });
+    return;
+  }
+
+  const result = ledger.adjustPlayerStat(payload.player_index, payload.stat, {
+    value: payload.value,
+    delta: payload.delta
+  });
+
+  const currentState = ledger.getFullState();
+  broadcast({
+    type: 'STATE_UPDATE',
+    timestamp: Date.now(),
+    data: currentState
+  });
+
+  res.json({ success: true, ...result, state: currentState });
 });
 
 // WebSocket connection lifecycle

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ActiveSessionStore, PartyMemberSummary } from '../shared/types';
+import { ActiveSessionStore, PartyMemberSummary, ManualAdjustmentRecord } from '../shared/types';
 
 export interface FloorPlayerWorkoutLog {
   player_index: number;
@@ -34,6 +34,7 @@ export interface RunWorkoutHistoryEntry {
   jog_penalty_applied: boolean;
   party_summary?: PartyMemberSummary[];
   stage_history?: FloorWorkoutLog[];
+  manual_adjustments?: ManualAdjustmentRecord[];
 }
 
 export interface WorkoutHistoryStore {
@@ -208,6 +209,83 @@ export class PersistenceManager {
     }
   }
 
+  public updatePlayerStat(
+    runId: string,
+    playerIndex: number,
+    stat: 'wc' | 'pushups' | 'squats',
+    newValue: number,
+    record: ManualAdjustmentRecord,
+    totalAccrued?: number
+  ): void {
+    const history = this.getHistoryStore();
+    let runEntry = history.completed_runs.find((r) => r.run_id === runId);
+    if (!runEntry) {
+      runEntry = {
+        run_id: runId,
+        outcome: 'ACTIVE',
+        floors_reached: 0,
+        total_counters_accrued: totalAccrued || 0,
+        total_pushups: stat === 'pushups' ? newValue : 0,
+        total_squats: stat === 'squats' ? newValue : 0,
+        jog_penalty_applied: false,
+        stage_history: [],
+        manual_adjustments: []
+      };
+      history.completed_runs.push(runEntry);
+    }
+
+    if (!runEntry.manual_adjustments) {
+      runEntry.manual_adjustments = [];
+    }
+    const existingAdj = runEntry.manual_adjustments.find(
+      (a) => a.player_index === playerIndex && a.stat === stat
+    );
+    if (existingAdj) {
+      existingAdj.net_delta = record.net_delta;
+      existingAdj.last_updated = record.last_updated;
+    } else {
+      runEntry.manual_adjustments.push({ ...record });
+    }
+
+    if (totalAccrued !== undefined) {
+      runEntry.total_counters_accrued = totalAccrued;
+    }
+
+    if (stat === 'pushups') {
+      if (runEntry.stage_history && runEntry.stage_history.length > 0) {
+        const lastStage = runEntry.stage_history[runEntry.stage_history.length - 1];
+        const pStage = lastStage.players.find((p) => p.player_index === playerIndex);
+        if (pStage) pStage.cumulative_pushups = newValue;
+      }
+      if (runEntry.party_summary) {
+        const pSummary = runEntry.party_summary.find((p) => p.player_index === playerIndex);
+        if (pSummary) pSummary.total_pushups = newValue;
+      }
+    } else if (stat === 'squats') {
+      if (runEntry.stage_history && runEntry.stage_history.length > 0) {
+        const lastStage = runEntry.stage_history[runEntry.stage_history.length - 1];
+        const pStage = lastStage.players.find((p) => p.player_index === playerIndex);
+        if (pStage) pStage.cumulative_squats = newValue;
+      }
+      if (runEntry.party_summary) {
+        const pSummary = runEntry.party_summary.find((p) => p.player_index === playerIndex);
+        if (pSummary) pSummary.total_squats = newValue;
+      }
+    } else if (stat === 'wc') {
+      if (runEntry.stage_history && runEntry.stage_history.length > 0) {
+        const lastStage = runEntry.stage_history[runEntry.stage_history.length - 1];
+        const pStage = lastStage.players.find((p) => p.player_index === playerIndex);
+        if (pStage) pStage.unresolved_debt = newValue;
+      }
+      if (runEntry.party_summary) {
+        const pSummary = runEntry.party_summary.find((p) => p.player_index === playerIndex);
+        if (pSummary) pSummary.final_unresolved_debt = newValue;
+      }
+    }
+
+    this.atomicWrite(this.historyPath, JSON.stringify(history, null, 2));
+  }
+
   public appendHistory(entry: RunWorkoutHistoryEntry): void {
     const history = this.getHistoryStore();
     const existingIdx = history.completed_runs.findIndex((r) => r.run_id === entry.run_id);
@@ -216,7 +294,8 @@ export class PersistenceManager {
       history.completed_runs[existingIdx] = {
         ...existing,
         ...entry,
-        stage_history: existing.stage_history || entry.stage_history || []
+        stage_history: existing.stage_history || entry.stage_history || [],
+        manual_adjustments: entry.manual_adjustments || existing.manual_adjustments || []
       };
     } else {
       history.completed_runs.push(entry);

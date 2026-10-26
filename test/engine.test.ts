@@ -519,6 +519,168 @@ function runTests() {
     delete process.env.PLAYER_NAME_10000000000000003;
   }
 
+  // 13. Manual Stat Adjustment (Overlay B) & History Audit Verification Tests
+  console.log('\n🧪 Running Manual Stat Adjustment (Overlay B) & History Audit Verification Tests...');
+  const adjustDir = path.join(testDir, 'adjust_test_' + Date.now());
+  fs.mkdirSync(adjustDir, { recursive: true });
+  const adjustPersistence = new PersistenceManager(adjustDir);
+  const adjustLedger = new DebtLedger(adjustPersistence);
+
+  const adjustFloor1: RawFloorEntry = {
+    floor_num: 1,
+    room_type: 'monster',
+    total_combat_turns: 3,
+    player_metrics: [
+      { player_index: 0, player_name: 'Hero', hp_start: 80, hp_end: 75, died_this_floor: false, death_turn: null },
+      { player_index: 1, player_name: 'Ally', hp_start: 70, hp_end: 65, died_this_floor: false, death_turn: null }
+    ]
+  };
+
+  adjustLedger.processSaveData({
+    run_id: 'run_adjust_test',
+    is_multiplayer: true,
+    player_count: 2,
+    players: [
+      { index: 0, name: 'Hero', character: 'IRONCLAD' },
+      { index: 1, name: 'Ally', character: 'SILENT' }
+    ],
+    run_status: 'ACTIVE',
+    floors: [adjustFloor1],
+    current_floor: 2,
+    in_reward_stage: false
+  });
+
+  // Both players took 3 turns (3 * 2 = 6) + 5 hp lost = 11 wc
+  let adjState = adjustLedger.getFullState();
+  assert(adjState.player_debts[0] === 11, `Player 0 initial debt should be 11, got ${adjState.player_debts[0]}`);
+  assert(adjState.player_debts[1] === 11, `Player 1 initial debt should be 11, got ${adjState.player_debts[1]}`);
+  assert(adjState.player_aggregates[0].pushups === 0, `Player 0 initial pushups should be 0`);
+  assert(adjState.player_aggregates[0].squats === 0, `Player 0 initial squats should be 0`);
+
+  // A. Adjust Push-ups (increment, decrement, and clamp at 0)
+  adjustLedger.adjustPlayerStat(0, 'pushups', { delta: 10 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].pushups === 10, `Player 0 pushups should be 10, got ${adjState.player_aggregates[0].pushups}`);
+  assert(adjState.player_aggregates[1].pushups === 0, `Player 1 pushups should remain 0 (multiplayer isolation)`);
+
+  adjustLedger.adjustPlayerStat(0, 'pushups', { delta: -3 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].pushups === 7, `Player 0 pushups should decrease to 7, got ${adjState.player_aggregates[0].pushups}`);
+
+  adjustLedger.adjustPlayerStat(0, 'pushups', { delta: -50 }); // Clamps at 0
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].pushups === 0, `Player 0 pushups should clamp at 0, got ${adjState.player_aggregates[0].pushups}`);
+
+  adjustLedger.adjustPlayerStat(0, 'pushups', { value: 15 }); // Absolute value assignment
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].pushups === 15, `Player 0 pushups should be 15 via value setter, got ${adjState.player_aggregates[0].pushups}`);
+
+  // B. Adjust Squats (increment, decrement, and clamp at 0)
+  adjustLedger.adjustPlayerStat(0, 'squats', { delta: 20 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].squats === 20, `Player 0 squats should be 20, got ${adjState.player_aggregates[0].squats}`);
+
+  adjustLedger.adjustPlayerStat(0, 'squats', { delta: -5 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].squats === 15, `Player 0 squats should decrease to 15, got ${adjState.player_aggregates[0].squats}`);
+
+  adjustLedger.adjustPlayerStat(0, 'squats', { delta: -100 }); // Clamps at 0
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].squats === 0, `Player 0 squats should clamp at 0, got ${adjState.player_aggregates[0].squats}`);
+
+  adjustLedger.adjustPlayerStat(0, 'squats', { value: 25 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_aggregates[0].squats === 25, `Player 0 squats should be 25 via value setter, got ${adjState.player_aggregates[0].squats}`);
+
+  // C. Adjust Remaining WC count / Debt (increment, decrement, accrued delta synchronization, and clamp at 0)
+  const prevAccrued = adjState.player_aggregates[0].accrued;
+  adjustLedger.adjustPlayerStat(0, 'wc', { delta: 4 }); // Debt 11 -> 15 (+4)
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_debts[0] === 15, `Player 0 debt should be 15, got ${adjState.player_debts[0]}`);
+  assert(adjState.player_aggregates[0].accrued === prevAccrued + 4, `Player 0 accrued should sync (+4), got ${adjState.player_aggregates[0].accrued}`);
+
+  adjustLedger.adjustPlayerStat(0, 'wc', { delta: -2 }); // Debt 15 -> 13 (-2)
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_debts[0] === 13, `Player 0 debt should be 13, got ${adjState.player_debts[0]}`);
+  assert(adjState.player_aggregates[0].accrued === prevAccrued + 2, `Player 0 accrued should decrease (-2), got ${adjState.player_aggregates[0].accrued}`);
+
+  adjustLedger.adjustPlayerStat(0, 'wc', { delta: -100 }); // Clamps debt at 0
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_debts[0] === 0, `Player 0 debt should clamp at 0, got ${adjState.player_debts[0]}`);
+
+  // Reset debt to 10 for late log and subsequent floor testing
+  adjustLedger.adjustPlayerStat(0, 'wc', { value: 10 });
+  adjState = adjustLedger.getFullState();
+  assert(adjState.player_debts[0] === 10, `Player 0 debt should be 10`);
+
+  // D. Verify Aggregated Audit Trail in State and History (1 entry per stat, not per click)
+  assert(Array.isArray(adjState.manual_adjustments) && adjState.manual_adjustments.length === 3, `Active state must contain exactly 3 aggregated records (1 per stat), got ${adjState.manual_adjustments?.length}`);
+  const adjustments = adjState.manual_adjustments!;
+  const wcAdj = adjustments.find((a) => a.player_index === 0 && a.stat === 'wc');
+  assert(wcAdj?.net_delta === -1, `WC aggregated net_delta should be -1 (11 -> 10), got ${wcAdj?.net_delta}`);
+  const pushupsAdj = adjustments.find((a) => a.player_index === 0 && a.stat === 'pushups');
+  assert(pushupsAdj?.net_delta === 15, `Pushups aggregated net_delta should be 15, got ${pushupsAdj?.net_delta}`);
+  const squatsAdj = adjustments.find((a) => a.player_index === 0 && a.stat === 'squats');
+  assert(squatsAdj?.net_delta === 25, `Squats aggregated net_delta should be 25, got ${squatsAdj?.net_delta}`);
+
+  const historyStore = adjustPersistence.getHistoryStore();
+  const histRun = historyStore.completed_runs.find((r) => r.run_id === 'run_adjust_test');
+  assert(!!histRun, 'Run entry must exist in workout_history.json');
+  assert(Array.isArray(histRun!.manual_adjustments) && histRun!.manual_adjustments!.length === 3, 'workout_history.json must preserve aggregated manual_adjustments audit trail');
+  assert(histRun!.total_pushups === 15, `Historical total_pushups should be 15, got ${histRun!.total_pushups}`);
+  assert(histRun!.total_squats === 25, `Historical total_squats should be 25, got ${histRun!.total_squats}`);
+
+  // E. Subsequent Floor / Late Log Resilience (adjustments must not be wiped by next floor or duplicate floor re-reads)
+  const adjustFloor2: RawFloorEntry = {
+    floor_num: 2,
+    room_type: 'event',
+    total_combat_turns: 0,
+    player_metrics: [
+      { player_index: 0, player_name: 'Hero', hp_start: 75, hp_end: 75, died_this_floor: false, death_turn: null },
+      { player_index: 1, player_name: 'Ally', hp_start: 65, hp_end: 65, died_this_floor: false, death_turn: null }
+    ]
+  };
+
+  adjustLedger.processSaveData({
+    run_id: 'run_adjust_test',
+    is_multiplayer: true,
+    player_count: 2,
+    players: [
+      { index: 0, name: 'Hero', character: 'IRONCLAD' },
+      { index: 1, name: 'Ally', character: 'SILENT' }
+    ],
+    run_status: 'ACTIVE',
+    floors: [adjustFloor1, adjustFloor2],
+    current_floor: 3,
+    in_reward_stage: false
+  });
+
+  const stateAfterFloor2 = adjustLedger.getFullState();
+  assert(stateAfterFloor2.player_debts[0] === 10, `Floor 2 non-combat should not wipe manually adjusted debt of 10, got ${stateAfterFloor2.player_debts[0]}`);
+  assert(stateAfterFloor2.player_aggregates[0].pushups === 15, `Floor 2 should retain pushups of 15, got ${stateAfterFloor2.player_aggregates[0].pushups}`);
+  assert(stateAfterFloor2.player_aggregates[0].squats === 25, `Floor 2 should retain squats of 25, got ${stateAfterFloor2.player_aggregates[0].squats}`);
+
+  // F. Run Termination Summary Preservation
+  const termRes = adjustLedger.processSaveData({
+    run_id: 'run_adjust_test',
+    is_multiplayer: true,
+    player_count: 2,
+    players: [
+      { index: 0, name: 'Hero', character: 'IRONCLAD' },
+      { index: 1, name: 'Ally', character: 'SILENT' }
+    ],
+    run_status: 'VICTORY',
+    floors: [adjustFloor1, adjustFloor2]
+  });
+
+  assert(!!termRes.terminatedEvent, 'Run termination event should trigger');
+  const p0Summary = termRes.terminatedEvent!.data.party_summary.find((p) => p.player_index === 0);
+  assert(p0Summary?.final_unresolved_debt === 10, `Final summary debt should be 10, got ${p0Summary?.final_unresolved_debt}`);
+  assert(p0Summary?.total_pushups === 15, `Final summary pushups should be 15, got ${p0Summary?.total_pushups}`);
+  assert(p0Summary?.total_squats === 25, `Final summary squats should be 25, got ${p0Summary?.total_squats}`);
+
+  console.log('  ✓ Manual Stat Adjustment (Overlay B) & History Audit unit tests passed cleanly!');
+
   // Cleanup test scratch directory
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
 

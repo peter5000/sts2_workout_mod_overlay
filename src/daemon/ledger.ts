@@ -8,7 +8,8 @@ import {
   PartyMemberSummary,
   PlayerInfo,
   ActiveSessionStore,
-  PendingPlayerFloor
+  PendingPlayerFloor,
+  ManualAdjustmentRecord
 } from '../shared/types';
 import { FloorParser } from './parser';
 import { PersistenceManager } from './persistence';
@@ -29,6 +30,7 @@ export class DebtLedger {
   private playerSquatRemainders: Map<number, number> = new Map();
   private playerNames: Map<number, string> = new Map();
   private playerSquatRatios: Map<number, number> = new Map();
+  private manualAdjustments: ManualAdjustmentRecord[] = [];
   private activeSessionsMap: Map<string, ActiveSessionStore> = new Map();
 
   private pendingFloorEntry: RawFloorEntry | null = null;
@@ -408,6 +410,110 @@ export class DebtLedger {
     }
   }
 
+  public adjustPlayerStat(
+    playerIndex: number,
+    stat: 'wc' | 'pushups' | 'squats',
+    adjust: { value?: number; delta?: number }
+  ): {
+    updatedWc: number;
+    updatedPushups: number;
+    updatedSquats: number;
+    adjustmentRecord: ManualAdjustmentRecord | null;
+  } {
+    if (!this.playerDebts.has(playerIndex)) {
+      this.playerDebts.set(playerIndex, 0);
+    }
+    if (!this.playerAggregates.has(playerIndex)) {
+      this.playerAggregates.set(playerIndex, { accrued: 0, pushups: 0, squats: 0 });
+    }
+
+    const currentDebt = this.playerDebts.get(playerIndex) || 0;
+    const aggs = this.playerAggregates.get(playerIndex) || { accrued: 0, pushups: 0, squats: 0 };
+
+    let prevValue = 0;
+    let newValue = 0;
+
+    if (stat === 'wc') {
+      prevValue = currentDebt;
+      if (typeof adjust.value === 'number') {
+        newValue = Math.max(0, adjust.value);
+      } else if (typeof adjust.delta === 'number') {
+        newValue = Math.max(0, currentDebt + adjust.delta);
+      }
+      const delta = newValue - prevValue;
+      this.playerDebts.set(playerIndex, newValue);
+      aggs.accrued = Math.max(0, aggs.accrued + delta);
+      this.playerAggregates.set(playerIndex, aggs);
+    } else if (stat === 'pushups') {
+      prevValue = aggs.pushups;
+      if (typeof adjust.value === 'number') {
+        newValue = Math.max(0, adjust.value);
+      } else if (typeof adjust.delta === 'number') {
+        newValue = Math.max(0, aggs.pushups + adjust.delta);
+      }
+      aggs.pushups = newValue;
+      this.playerAggregates.set(playerIndex, aggs);
+    } else if (stat === 'squats') {
+      prevValue = aggs.squats;
+      if (typeof adjust.value === 'number') {
+        newValue = Math.max(0, adjust.value);
+      } else if (typeof adjust.delta === 'number') {
+        newValue = Math.max(0, aggs.squats + adjust.delta);
+      }
+      aggs.squats = newValue;
+      this.playerAggregates.set(playerIndex, aggs);
+    }
+
+    const delta = newValue - prevValue;
+    let record: ManualAdjustmentRecord | null = null;
+
+    if (delta !== 0) {
+      const existing = this.manualAdjustments.find(
+        (a) => a.player_index === playerIndex && a.stat === stat
+      );
+      if (existing) {
+        existing.net_delta += delta;
+        existing.last_updated = Date.now();
+        record = existing;
+      } else {
+        record = {
+          player_index: playerIndex,
+          stat,
+          net_delta: delta,
+          last_updated: Date.now()
+        };
+        this.manualAdjustments.push(record);
+      }
+
+      const playerName = this.playerNames.get(playerIndex) || `Player ${playerIndex}`;
+      console.log(
+        `[MANUAL ADJUSTMENT] ${playerName} (index ${playerIndex}) adjusted ${stat}: ${prevValue} -> ${newValue} (net_delta: ${record.net_delta >= 0 ? `+${record.net_delta}` : record.net_delta})`
+      );
+
+      this.persistCurrentState();
+      this.syncHistoryAggregates();
+
+      if (this.runId) {
+        const totals = this.computeTotals();
+        this.persistence.updatePlayerStat(
+          this.runId,
+          playerIndex,
+          stat,
+          newValue,
+          record,
+          totals.totalAccrued
+        );
+      }
+    }
+
+    return {
+      updatedWc: this.playerDebts.get(playerIndex) || 0,
+      updatedPushups: aggs.pushups,
+      updatedSquats: aggs.squats,
+      adjustmentRecord: record
+    };
+  }
+
   public getPlayerRatio(playerIndex: number): number {
     return this.playerSquatRatios.get(playerIndex) ?? this.squatRatio;
   }
@@ -592,6 +698,7 @@ export class DebtLedger {
       player_aggregates: aggsObj,
       player_squat_remainders: remaindersObj,
       player_names: namesObj,
+      manual_adjustments: [...this.manualAdjustments],
       run_status: this.runStatus,
       jog_penalty: {
         active: this.jogPenaltyActive,
@@ -636,6 +743,7 @@ export class DebtLedger {
     this.playerSquatRemainders.clear();
     this.playerNames.clear();
     this.playerSquatRatios.clear();
+    this.manualAdjustments = [];
 
     for (const p of this.players) {
       const idx = typeof p.index === 'number' ? p.index : 0;
@@ -678,7 +786,8 @@ export class DebtLedger {
       total_pushups: totalPushups,
       total_squats: totalSquats,
       jog_penalty_applied: isDefeat,
-      party_summary: summaries
+      party_summary: summaries,
+      manual_adjustments: [...this.manualAdjustments]
     });
 
     return {
@@ -751,5 +860,6 @@ export class DebtLedger {
     if (saved.player_names) {
       Object.entries(saved.player_names).forEach(([k, v]) => this.playerNames.set(Number(k), v));
     }
+    this.manualAdjustments = Array.isArray(saved.manual_adjustments) ? [...saved.manual_adjustments] : [];
   }
 }

@@ -195,16 +195,8 @@ const App: React.FC = () => {
 
   // REST Action Handlers
   const handleResolveReps = async (actionType: 'CUSTOM_ENTRY' | 'ALL_PUSHUPS' | 'ALL_SQUATS', exercise?: 'pushups' | 'squats') => {
-    if (actionType === 'ALL_PUSHUPS') {
+    if (actionType === 'ALL_PUSHUPS' || actionType === 'ALL_SQUATS') {
       if (activeDebt <= 0) return;
-      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${activeDebt} Push-ups?`)) {
-        return;
-      }
-    } else if (actionType === 'ALL_SQUATS') {
-      if (activeDebt <= 0) return;
-      if (!window.confirm(`Clear entire debt of ${activeDebt} wc with ${allSquatsCount} Squats?`)) {
-        return;
-      }
     }
 
     const val = parseInt(repsInput, 10) || 0;
@@ -278,6 +270,23 @@ const App: React.FC = () => {
       fetchState();
     } catch (e) {
       console.error('Failed to update deaths:', e);
+    }
+  };
+
+  const handleAdjustStat = async (stat: 'wc' | 'pushups' | 'squats', delta: number) => {
+    try {
+      await fetch(`${apiBase}/api/v1/workout/adjust`, {
+        method: 'POST',
+        headers: customHeaders,
+        body: JSON.stringify({
+          player_index: selectedPlayerIdx,
+          stat,
+          delta
+        })
+      });
+      fetchState();
+    } catch (e) {
+      console.error('Failed to adjust stat:', e);
     }
   };
 
@@ -516,17 +525,81 @@ const App: React.FC = () => {
           )}
 
           <div style={styles.statGrid}>
-            <div style={styles.statCard}>
+            <div className="stat-card" style={styles.statCard}>
               <div style={styles.statLabel}>Push-ups</div>
-              <div style={styles.statVal}>{activeAggs.pushups}</div>
+              <div style={styles.statStepperRow}>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('pushups', -1)}
+                  style={styles.statHoverBtn}
+                  title="Decrease push-ups"
+                >
+                  −
+                </button>
+                <div style={styles.statVal}>{activeAggs.pushups}</div>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('pushups', 1)}
+                  style={styles.statHoverBtn}
+                  title="Increase push-ups"
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <div style={styles.statCard}>
+
+            <div className="stat-card" style={styles.statCard}>
               <div style={styles.statLabel}>Squats</div>
-              <div style={styles.statVal}>{activeAggs.squats}</div>
+              <div style={styles.statStepperRow}>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('squats', -1)}
+                  style={styles.statHoverBtn}
+                  title="Decrease squats"
+                >
+                  −
+                </button>
+                <div style={styles.statVal}>{activeAggs.squats}</div>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('squats', 1)}
+                  style={styles.statHoverBtn}
+                  title="Increase squats"
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <div style={styles.statCard}>
+
+            <div className="stat-card" style={styles.statCard}>
               <div style={styles.statLabel}>Remaining wc</div>
-              <div style={{ ...styles.statVal, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>{activeDebt} wc</div>
+              <div style={styles.statStepperRow}>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('wc', -1)}
+                  style={styles.statHoverBtn}
+                  title="Decrease remaining wc"
+                >
+                  −
+                </button>
+                <div style={{ ...styles.statVal, color: activeDebt > 0 ? '#fc8181' : '#68d391' }}>
+                  {activeDebt} <span style={{ fontSize: 'clamp(9px, 2vh, 12px)', fontWeight: 'normal' }}>wc</span>
+                </div>
+                <button
+                  type="button"
+                  className="stat-hover-btn"
+                  onClick={() => handleAdjustStat('wc', 1)}
+                  style={styles.statHoverBtn}
+                  title="Increase remaining wc"
+                >
+                  +
+                </button>
+              </div>
             </div>
           </div>
 
@@ -938,18 +1011,55 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     background: 'rgba(0, 0, 0, 0.25)',
     padding: 'clamp(4px, 1vh, 8px)',
-    borderRadius: '4px'
+    borderRadius: '4px',
+    border: '1px solid transparent',
+    position: 'relative',
+    overflow: 'hidden'
   },
   statLabel: {
     fontSize: 'clamp(10px, 2.2vh, 14px)',
     color: '#a0aec0',
     textAlign: 'center',
-    fontWeight: 'bold'
-  },
-  statVal: {
-    fontSize: 'clamp(16px, 5vh, 32px)',
     fontWeight: 'bold',
-    color: '#edf2f7'
+    marginBottom: '2px'
+  },
+  statStepperRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: '0 2px',
+    gap: '4px'
+  },
+  statHoverBtn: {
+    width: 'clamp(28px, 6vh, 38px)',
+    height: 'clamp(28px, 6vh, 38px)',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.35)',
+    background: 'rgba(255, 255, 255, 0.22)',
+    color: '#fff',
+    fontSize: 'clamp(18px, 3.6vh, 24px)',
+    fontWeight: 'bold',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    padding: 0,
+    lineHeight: 1,
+    userSelect: 'none',
+    WebkitAppRegion: 'no-drag',
+    flexShrink: 0
+  } as React.CSSProperties,
+  statVal: {
+    fontSize: 'clamp(15px, 4.5vh, 26px)',
+    fontWeight: 'bold',
+    color: '#edf2f7',
+    textAlign: 'center',
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
   },
   ratioRow: {
     flex: 1,
