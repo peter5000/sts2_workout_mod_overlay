@@ -84,8 +84,8 @@ Choose the guide that matches your role. Each guide is fully self-contained.
 
 ### Setup Guide: Solo Player
 
-<details>
-<summary><b>Click to expand Solo Player setup instructions</b></summary>
+<details open>
+<summary><b>Click to collapse / expand Solo Player setup instructions</b></summary>
 <br>
 
 If you are playing Slay the Spire 2 by yourself on your own PC, you only need to run the local tracker and the overlay HUD.
@@ -141,8 +141,8 @@ Start Slay the Spire 2. The overlay will connect automatically to `127.0.0.1:876
 
 ### Setup Guide: Co-op Host
 
-<details>
-<summary><b>Click to expand Co-op Host setup instructions</b></summary>
+<details open>
+<summary><b>Click to collapse / expand Co-op Host setup instructions</b></summary>
 <br>
 
 The host PC runs Slay the Spire 2, monitors save files, and runs a public relay so teammates can connect their overlays.
@@ -203,8 +203,8 @@ npm run start:overlay
 
 ### Setup Guide: Co-op Teammate
 
-<details>
-<summary><b>Click to expand Co-op Teammate setup instructions</b></summary>
+<details open>
+<summary><b>Click to collapse / expand Co-op Teammate setup instructions</b></summary>
 <br>
 
 Teammates joining a multiplayer lobby do **not** need access to the game save files, do **not** need ngrok accounts, and do **not** run the background daemon. You only run the HUD overlay on your own PC and point it to the host.
