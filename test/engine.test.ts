@@ -12,6 +12,7 @@ import { runDeathDetectionTests } from './deathDetection.test';
 import { runRewardStageTests } from './rewardStage.test';
 import { runGameLifecycleTests } from './gameLifecycle.test';
 import { runSummaryDismissalTests } from './summaryDismissal.test';
+import { runSaveWatcherTests } from './saveWatcher.test';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -20,7 +21,7 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-function runTests() {
+async function runTests() {
   console.log('🧪 Running Engine Unit Tests...');
   runLogReaderTests();
   runRoomTrackingTests();
@@ -29,6 +30,7 @@ function runTests() {
   runRewardStageTests();
   runGameLifecycleTests();
   runSummaryDismissalTests();
+  await runSaveWatcherTests();
 
   const testDir = path.join(__dirname, 'scratch_test_dir');
   if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
@@ -687,4 +689,7 @@ function runTests() {
   console.log('\n🎉 ALL UNIT & MATHEMATICAL VERIFICATION TESTS PASSED CLEANLY!\n');
 }
 
-runTests();
+runTests().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

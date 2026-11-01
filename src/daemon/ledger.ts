@@ -736,6 +736,8 @@ export class DebtLedger {
     this.runStatus = 'ACTIVE';
     this.pendingFloorEntry = null;
     this.pendingPlayerFloors.clear();
+    this.jogPenaltyActive = false;
+    this.jogPenaltyDeadline = null;
 
     this.playerDebts.clear();
     this.playerDeaths.clear();

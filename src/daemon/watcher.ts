@@ -52,8 +52,11 @@ export class SaveWatcher {
       if (fileName === 'current_run.save' || fileName === 'current_run_mp.save') {
         console.log(`[SAVE WATCHER] Active save removed (${fileName}). Checking history directory for completed run...`);
         setTimeout(() => {
+          if (fs.existsSync(filePath)) {
+            return;
+          }
           this.checkLatestHistoryRun();
-        }, 150);
+        }, 300);
       }
     };
 
@@ -138,8 +141,11 @@ export class SaveWatcher {
 
       if (files.length > 0) {
         const latestHistoryFile = files[0];
-        console.log(`[SAVE WATCHER] Ingesting latest run history file: ${latestHistoryFile}`);
-        this.scheduleDebouncedRead(latestHistoryFile);
+        const ageMs = Date.now() - fs.statSync(latestHistoryFile).mtimeMs;
+        if (ageMs < 15000) {
+          console.log(`[SAVE WATCHER] Ingesting freshly completed run history file: ${latestHistoryFile}`);
+          this.scheduleDebouncedRead(latestHistoryFile);
+        }
       }
     } catch (err) {
       console.error(`[SAVE WATCHER ERROR] Failed to check history directory:`, err);

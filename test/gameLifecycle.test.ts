@@ -186,6 +186,26 @@ export function runGameLifecycleTests() {
   assert(deadlineDiff > 23 * 3600 * 1000 && deadlineDiff <= 24 * 3600 * 1000 + 1000, 'Jog deadline must be ~24h in future');
   console.log('  ✓ Game end DEFEAT wipe combat waiver & 24h jog penalty verified');
 
+  // Next Run Clean Slate: Starting a subsequent run resets jog penalty
+  const nextRunSave: RawRunSaveData = {
+    run_id: 'lifecycle_next_run',
+    is_multiplayer: false,
+    player_count: 1,
+    players: [{ index: 0, name: 'HostPlayer', character: 'DEFECT' }],
+    run_status: 'ACTIVE',
+    floors: [],
+    current_floor: 0,
+    in_reward_stage: false
+  };
+
+  defeatLedger.processSaveData(nextRunSave);
+  const nextState = defeatLedger.getFullState();
+  assert(nextState.run_id === 'lifecycle_next_run', 'Active run should be lifecycle_next_run');
+  assert(nextState.run_status === 'ACTIVE', 'New run status must be ACTIVE');
+  assert(nextState.jog_penalty.active === false, 'Jog penalty must be RESET to false for new run');
+  assert(nextState.jog_penalty.deadline_timestamp === null, 'Jog penalty deadline must be RESET to null for new run');
+  console.log('  ✓ Next run clean slate & jog penalty reset verified');
+
   // Abandoned run normalization to DEFEAT
   const abandonedRaw = {
     run_id: 'lifecycle_abandon_run',
