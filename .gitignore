@@ -11,10 +11,7 @@ release/
 
 # Environment and Secret Files
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+ngrok.yml
 *.pem
 
 # Local Persistence & Test Outputs
