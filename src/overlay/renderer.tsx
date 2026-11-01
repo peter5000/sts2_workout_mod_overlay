@@ -179,6 +179,25 @@ const App: React.FC = () => {
     };
   }, [daemonHost]);
 
+  // Synchronize Host between Window A and Window B via storage events
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sts2_daemon_host' && e.newValue && e.newValue !== daemonHost) {
+        setDaemonHost(e.newValue);
+        setTempHostInput(e.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [daemonHost]);
+
+  // Auto-disable click-through when an interactive modal is opened so clicks are never ignored
+  useEffect(() => {
+    if ((showHostModal || showStartModal) && clickThrough) {
+      ipcRenderer.send('set-click-through', false);
+    }
+  }, [showHostModal, showStartModal, clickThrough]);
+
   // Live countdown timer ticker for 24h Jog Penalty
   useEffect(() => {
     if (!session?.jog_penalty?.active || !session.jog_penalty.deadline_timestamp) return;
@@ -758,13 +777,24 @@ const App: React.FC = () => {
           <div style={styles.modalCard}>
             <h3 style={{ color: '#63b3ed', fontSize: 'clamp(13px, 2.5vh, 16px)', margin: '0 0 8px 0' }}>🌐 DAEMON HOST SETTINGS</h3>
             <p style={{ margin: '4px 0 10px 0', fontSize: 'clamp(10px, 1.8vh, 12px)', color: '#cbd5e0' }}>
-              Enter Host PC IP Address (e.g. 192.168.1.X or Tailscale IP). Leave as 127.0.0.1 if daemon is local:
+              Enter Host IP or Tunnel URL (e.g. 192.168.1.X or https://...ngrok-free.app). Leave as 127.0.0.1 if daemon is local:
             </p>
             <input
               type="text"
+              autoFocus
               value={tempHostInput}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTempHostInput(e.target.value)}
-              placeholder="127.0.0.1 or 192.168.1.X"
+              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === 'Enter') {
+                  const cleaned = tempHostInput.trim() || '127.0.0.1';
+                  setDaemonHost(cleaned);
+                  localStorage.setItem('sts2_daemon_host', cleaned);
+                  setShowHostModal(false);
+                } else if (e.key === 'Escape') {
+                  setShowHostModal(false);
+                }
+              }}
+              placeholder="127.0.0.1, 192.168.1.X, or https://...ngrok-free.app"
               style={{ ...styles.input, width: '90%', marginBottom: '12px', textAlign: 'center' }}
             />
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -792,6 +822,7 @@ const App: React.FC = () => {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
+    position: 'relative',
     padding: 'clamp(4px, 1.5vh, 10px)',
     height: '100vh',
     width: '100vw',
@@ -1113,8 +1144,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 'clamp(8px, 2vh, 16px)',
-    borderRadius: '12px'
-  },
+    borderRadius: '12px',
+    zIndex: 99999,
+    WebkitAppRegion: 'no-drag'
+  } as React.CSSProperties,
   modalCard: {
     background: 'rgba(26, 32, 44, 0.95)',
     padding: 'clamp(10px, 2vh, 16px)',
@@ -1123,8 +1156,11 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     width: '100%',
     maxHeight: '90vh',
-    overflowY: 'auto'
-  },
+    overflowY: 'auto',
+    position: 'relative',
+    zIndex: 100000,
+    WebkitAppRegion: 'no-drag'
+  } as React.CSSProperties,
   timerBox: {
     background: 'rgba(0, 0, 0, 0.3)',
     padding: 'clamp(6px, 1.5vh, 10px)',
