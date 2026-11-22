@@ -142,9 +142,9 @@ export async function runUiTests() {
 }
 
 // Allow direct execution via ts-node
-if (require.main === module) {
-  runUiTests().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-}
+runUiTests().then(() => {
+  process.exit(0);
+}).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

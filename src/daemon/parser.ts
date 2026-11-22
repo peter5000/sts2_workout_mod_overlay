@@ -14,7 +14,8 @@ export class FloorParser {
     squatRatio: number | Map<number, number>,
     isDefeatFloor: boolean = false
   ): PlayerFloorReport[] {
-    const isNonCombat: boolean = ['event', 'campfire', 'shop', 'rest'].includes(floorEntry.room_type);
+    const isNonCombat: boolean = ['campfire', 'shop', 'rest'].includes(floorEntry.room_type) ||
+      (floorEntry.room_type === 'event' && floorEntry.total_combat_turns === 0);
     const reports: PlayerFloorReport[] = [];
 
     for (const metric of floorEntry.player_metrics) {

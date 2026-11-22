@@ -206,5 +206,62 @@ export function runRoomTrackingTests() {
   assert(act2Penalty === 10, `Act 2 ancient room penalty should be 10 wc (ignoring 50 heal), got ${act2Penalty}`);
   console.log('  ✓ Act 2 start Ancient room penalty isolation verified');
 
+  // 8. Unknown '?' node encounter room type resolution:
+  // In StS2, map_point_type is 'unknown' for all '?' nodes, but rooms[0].room_type contains the actual encounter.
+  // Must correctly resolve:
+  // - unknown + monster -> 'monster' (combat turns preserved)
+  // - unknown + elite -> 'elite' (combat turns preserved)
+  // - unknown + treasure -> 'event'
+  // - unknown + shop -> 'shop'
+  // - unknown + rest_site -> 'campfire'
+  const saveUnknownNodes = {
+    run_id: 'test_unknown_room_resolution',
+    current_act_index: 0,
+    map_point_history: [
+      [
+        {
+          map_point_type: 'unknown',
+          rooms: [{ room_type: 'monster', turns_taken: 1, model_id: 'ENCOUNTER.BOWLBUGS_WEAK' }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 70, max_hp: 70, damage_taken: 0, hp_healed: 0 }]
+        },
+        {
+          map_point_type: 'unknown',
+          rooms: [{ room_type: 'elite', turns_taken: 4, model_id: 'ENCOUNTER.ELITE_TEST' }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 60, max_hp: 70, damage_taken: 10, hp_healed: 0 }]
+        },
+        {
+          map_point_type: 'unknown',
+          rooms: [{ room_type: 'treasure', turns_taken: 0 }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 60, max_hp: 70, damage_taken: 0, hp_healed: 0 }]
+        },
+        {
+          map_point_type: 'unknown',
+          rooms: [{ room_type: 'shop', turns_taken: 0 }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 60, max_hp: 70, damage_taken: 0, hp_healed: 0 }]
+        },
+        {
+          map_point_type: 'unknown',
+          rooms: [{ room_type: 'rest_site', turns_taken: 0 }],
+          player_stats: [{ player_id: '10000000000000001', current_hp: 60, max_hp: 70, damage_taken: 0, hp_healed: 0 }]
+        }
+      ]
+    ],
+    visited_map_coords: [{ col: 0, row: 0 }],
+    pre_finished_room: null,
+    players: [{ id: '10000000000000001', name: 'PlayerOne' }],
+    character: 'IRONCLAD'
+  };
+
+  const norm8 = normalizeSaveData(saveUnknownNodes);
+  assert(norm8.floors.length === 5, `Expected 5 floors, got ${norm8.floors.length}`);
+  assert(norm8.floors[0].room_type === 'monster', `Floor 0 unknown+monster should be 'monster', got ${norm8.floors[0].room_type}`);
+  assert(norm8.floors[0].total_combat_turns === 1, `Floor 0 combat turns should be 1, got ${norm8.floors[0].total_combat_turns}`);
+  assert(norm8.floors[1].room_type === 'elite', `Floor 1 unknown+elite should be 'elite', got ${norm8.floors[1].room_type}`);
+  assert(norm8.floors[1].total_combat_turns === 4, `Floor 1 combat turns should be 4, got ${norm8.floors[1].total_combat_turns}`);
+  assert(norm8.floors[2].room_type === 'event', `Floor 2 unknown+treasure should be 'event', got ${norm8.floors[2].room_type}`);
+  assert(norm8.floors[3].room_type === 'shop', `Floor 3 unknown+shop should be 'shop', got ${norm8.floors[3].room_type}`);
+  assert(norm8.floors[4].room_type === 'campfire', `Floor 4 unknown+rest_site should be 'campfire', got ${norm8.floors[4].room_type}`);
+  console.log('  ✓ Unknown map_point_type actual encounter room type resolution verified');
+
   console.log('  ✓ All Room & Floor Tracking tests passed cleanly!\n');
 }

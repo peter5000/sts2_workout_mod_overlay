@@ -152,12 +152,15 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
       act.forEach((mp: any, actNodeIdx: number) => {
         globalFloorNum++;
         const isLastFloor = globalFloorNum === totalFloorsCount;
-        const isCombatFloorType = ['monster', 'weak_monster', 'normal', 'elite', 'boss'].includes(
-          mp.map_point_type || mp.rooms?.[0]?.room_type || ''
-        );
+        const encounterRoomType = mp.rooms?.[0]?.room_type;
+        const actualType = (mp.map_point_type === 'unknown' && encounterRoomType)
+          ? encounterRoomType
+          : (mp.map_point_type || encounterRoomType || 'event');
+
+        const isCombatFloorType = ['monster', 'weak_monster', 'normal', 'elite', 'boss'].includes(actualType);
         const isActStartFloor = mp.map_point_type === 'ancient';
 
-        const rawType = mp.map_point_type || mp.rooms?.[0]?.room_type || 'event';
+        const rawType = actualType;
         let room_type: RoomType = 'event';
         if (['monster', 'weak_monster', 'normal'].includes(rawType)) room_type = 'monster';
         else if (rawType === 'elite') room_type = 'elite';
@@ -169,6 +172,10 @@ export function normalizeSaveData(raw: any, logSource?: CombatDeathInfo | string
         const total_combat_turns = typeof mp.rooms?.[0]?.turns_taken === 'number'
           ? mp.rooms[0].turns_taken
           : 0;
+
+        if (room_type === 'event' && total_combat_turns > 0) {
+          room_type = 'monster';
+        }
 
         const isCombat = ['monster', 'elite', 'boss'].includes(room_type);
         const playerStats = Array.isArray(mp.player_stats) ? mp.player_stats : [];
